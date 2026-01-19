@@ -3,5 +3,6 @@
   "lon":13.52481,
   "postal_code":"12459.0",
   "country_code":"de",
-  "tz":"Europe\/Berlin"
+  "tz":"Europe\/Berlin",
+  "altitude": 34
 }

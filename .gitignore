@@ -1,0 +1,24 @@
+# IDE
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+venv/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Generated outputs
+outputs/
+*.parquet
+
+# OS
+.DS_Store
+Thumbs.db
