@@ -49,6 +49,9 @@ def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
 
     # Read the CSV (comma or semicolon separators are supported).
     weather = pd.read_csv(weather_path, sep=None, engine="python")
+    if len(weather.columns) == 1 and ";" in weather.columns[0]:
+        weather = pd.read_csv(weather_path, sep=";")
+    weather.columns = [col.strip().lstrip("\ufeff") for col in weather.columns]
     missing = REQUIRED_WEATHER_COLUMNS - set(weather.columns)
     if missing:
         missing_str = ", ".join(sorted(missing))

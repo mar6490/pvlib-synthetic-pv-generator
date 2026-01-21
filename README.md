@@ -41,8 +41,12 @@ pip install -r requirements.txt
 Generate synthetic systems:
 
 ```bash
-py scripts\generate_synthetic_pv.py --weather data\wetter-htw-2025-utc.csv --meta data\site_meta.json --out-dir outputs --n-systems 30 --seed 42
-
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs \
+  --n-systems 30 \
+  --seed 42
 ```
 
 Outputs:
