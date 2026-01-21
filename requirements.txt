@@ -1,3 +1,5 @@
+# p3_11_spvg
+# python 3.11
 pvlib
 pandas
 numpy
