@@ -1,3 +1,4 @@
 pvlib
 pandas
 numpy
+pytest
