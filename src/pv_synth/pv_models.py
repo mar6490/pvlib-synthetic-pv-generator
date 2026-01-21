@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import pandas as pd
 import pvlib
 
-from pv_synth.shading import shading_factor
+from pv_synth.shading import compute_shading_factor
 
 
 @dataclass
@@ -25,7 +25,8 @@ class SystemConfig:
     azimuth: float | None
     dc_ac_ratio: float
     losses: float
-    shading_type: str
+    shading_model: str
+    shading_profiles: dict[str, dict]
 
 
 def _solar_position(times: pd.DatetimeIndex, meta: dict) -> pd.DataFrame:
@@ -112,6 +113,10 @@ def simulate_system(
     # Estimate DNI so we can compute POA irradiance.
     dni = _dni_from_ghi_dhi(weather["ghi"], weather["dhi"], solar_position["zenith"])
 
+    shading = None
+    shading_east = None
+    shading_west = None
+
     if config.system_type == "east-west":
         # East-facing sub-array.
         poa_east = _poa_irradiance(
@@ -131,10 +136,15 @@ def simulate_system(
             tilt=config.tilt,
             azimuth=270.0,
         )
-        # Apply the same shading profile to both sub-arrays.
-        shading = shading_factor(weather.index, config.shading_type)
-        poa_east = poa_east * shading
-        poa_west = poa_west * shading
+        # Apply shading profiles to both sub-arrays.
+        shading_east = compute_shading_factor(
+            solar_position, config.shading_model, config.shading_profiles.get("east", {})
+        )
+        shading_west = compute_shading_factor(
+            solar_position, config.shading_model, config.shading_profiles.get("west", {})
+        )
+        poa_east = poa_east * shading_east
+        poa_west = poa_west * shading_west
         # Split DC capacity evenly across east and west.
         dc_east = _dc_power(
             poa_east, weather["t_luft"], weather["v_wind"], config.kwp / 2
@@ -154,7 +164,9 @@ def simulate_system(
             tilt=config.tilt,
             azimuth=config.azimuth or 180.0,
         )
-        shading = shading_factor(weather.index, config.shading_type)
+        shading = compute_shading_factor(
+            solar_position, config.shading_model, config.shading_profiles.get("single", {})
+        )
         poa = poa * shading
         # Apply system losses after DC generation.
         dc_power = _dc_power(
@@ -170,5 +182,8 @@ def simulate_system(
             "time": weather.index,
             "dc_power_w": dc_power.values,
             "ac_power_w": ac_power.values,
+            "shading_factor": (
+                (shading_east + shading_west) / 2 if config.system_type == "east-west" else shading
+            ).values,
         }
     )

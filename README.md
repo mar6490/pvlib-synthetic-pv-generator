@@ -65,12 +65,14 @@ Outputs:
 
 ## Output details
 - `outputs/system_<id>.csv` columns:
-  - `time`: localized timestamps (Europe/Berlin)
+  - `time`: UTC timestamps
   - `dc_power_w`: DC power in watts
   - `ac_power_w`: AC power in watts (after inverter clipping)
+  - `shading_factor`: multiplicative shading applied to POA irradiance
 - `outputs/systems_metadata.csv` columns:
   - `system_id`, `system_type`, `kwp`, `tilt`, `azimuth`, `dc_ac_ratio`,
-    `losses`, `shading_type`
+    `losses`, `shading_model`, `shading_profiles`, `horizon_deg`, `strength`,
+    `softness_deg`, `sectors`
 
 ## System ranges and orientations
 - kWp range: 3–15 kWp (randomized per system).
@@ -84,7 +86,21 @@ Outputs:
     total kWp split evenly.
 
 ## Shading behavior
-- Shading is sampled per system from: `none`, `morning`, `evening`, `midday`.
-- Yes, there are systems without shading (`none`).
-- Shading does not change over the year in this implementation; it is applied
-  consistently by time-of-day (e.g., mornings or midday) regardless of month.
+- Shading is a geometric approximation of horizon obstruction using solar azimuth
+  and elevation, not fixed clock times.
+- Each system is assigned a `shading_model` of `none` or `horizon_obstruction`.
+- For `horizon_obstruction`, sectors define azimuth ranges and a horizon cutoff
+  elevation. Shading strength ramps smoothly around the horizon.
+- The model is deterministic and does not vary by month; it depends only on the
+  sun position.
+
+Example profile (east obstruction):
+```
+shading_model: horizon_obstruction
+sectors: [(60, 150)]
+horizon_deg: 12
+strength: 0.6
+softness_deg: 4
+```
+Interpretation: when the sun is in the east sector and below ~12° elevation,
+the irradiance is reduced smoothly with strength 0.6.

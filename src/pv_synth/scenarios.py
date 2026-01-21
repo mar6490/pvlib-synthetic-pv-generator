@@ -15,6 +15,16 @@ import numpy as np
 from pv_synth.pv_models import SystemConfig
 
 
+def _sector_for_orientation(system_type: str) -> list[tuple[float, float]]:
+    if system_type == "south":
+        return [(140.0, 220.0)]
+    if system_type == "east":
+        return [(60.0, 150.0)]
+    if system_type == "west":
+        return [(210.0, 300.0)]
+    return [(140.0, 220.0)]
+
+
 def _sample_azimuth(system_type: str, rng: np.random.Generator) -> float | None:
     """Sample an azimuth appropriate for each system orientation."""
     if system_type == "south":
@@ -45,7 +55,69 @@ def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemCo
         azimuth = _sample_azimuth(system_type, rng)
         dc_ac_ratio = float(rng.uniform(1.05, 1.25))
         losses = float(rng.uniform(0, 0.2))
-        shading_type = rng.choice(["none", "morning", "evening", "midday"])
+        shading_model = rng.choice(["none", "horizon_obstruction"])
+        horizon_deg = float(rng.uniform(5, 25))
+        strength = float(rng.uniform(0.2, 0.8))
+        softness_deg = float(rng.uniform(2, 8))
+        shading_profiles: dict[str, dict] = {}
+
+        if shading_model == "horizon_obstruction":
+            if system_type == "east-west":
+                variant = rng.choice(["east_obstruction", "west_obstruction", "south_obstruction"])
+                if variant == "east_obstruction":
+                    shading_profiles = {
+                        "east": {
+                            "sectors": [(60.0, 150.0)],
+                            "horizon_deg": horizon_deg,
+                            "strength": strength,
+                            "softness_deg": softness_deg,
+                        },
+                        "west": {
+                            "sectors": [(210.0, 300.0)],
+                            "horizon_deg": horizon_deg,
+                            "strength": 0.05,
+                            "softness_deg": softness_deg,
+                        },
+                    }
+                elif variant == "west_obstruction":
+                    shading_profiles = {
+                        "east": {
+                            "sectors": [(60.0, 150.0)],
+                            "horizon_deg": horizon_deg,
+                            "strength": 0.05,
+                            "softness_deg": softness_deg,
+                        },
+                        "west": {
+                            "sectors": [(210.0, 300.0)],
+                            "horizon_deg": horizon_deg,
+                            "strength": strength,
+                            "softness_deg": softness_deg,
+                        },
+                    }
+                else:
+                    shading_profiles = {
+                        "east": {
+                            "sectors": [(140.0, 220.0)],
+                            "horizon_deg": horizon_deg,
+                            "strength": strength,
+                            "softness_deg": softness_deg,
+                        },
+                        "west": {
+                            "sectors": [(140.0, 220.0)],
+                            "horizon_deg": horizon_deg,
+                            "strength": strength,
+                            "softness_deg": softness_deg,
+                        },
+                    }
+            else:
+                shading_profiles = {
+                    "single": {
+                        "sectors": _sector_for_orientation(system_type),
+                        "horizon_deg": horizon_deg,
+                        "strength": strength,
+                        "softness_deg": softness_deg,
+                    }
+                }
         scenarios.append(
             SystemConfig(
                 system_id=idx,
@@ -55,7 +127,8 @@ def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemCo
                 azimuth=azimuth,
                 dc_ac_ratio=dc_ac_ratio,
                 losses=losses,
-                shading_type=shading_type,
+                shading_model=shading_model,
+                shading_profiles=shading_profiles,
             )
         )
 
