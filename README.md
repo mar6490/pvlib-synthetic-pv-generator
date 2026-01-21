@@ -23,7 +23,7 @@ Generate synthetic systems:
 
 ```bash
 python scripts/generate_synthetic_pv.py \
-  --weather data/weather.csv \
+  --weather data/wetter-htw-2025.csv \
   --meta data/site_meta.json \
   --out-dir outputs \
   --n-systems 30 \
