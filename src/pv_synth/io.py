@@ -7,12 +7,16 @@ with strict validation so that downstream PV modeling can rely on clean inputs.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
 
-REQUIRED_WEATHER_COLUMNS = {"time", "ghi", "dhi", "t_luft", "v_wind"}
+REQUIRED_WEATHER_COLUMNS = ["time", "ghi", "dhi", "t_luft", "v_wind"]
 REQUIRED_META_KEYS = {"lat", "lon", "tz"}
+TIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
+EXPECTED_HEADER = "time;ghi;dhi;t_luft;v_wind"
+EXAMPLE_TIMESTAMP = "2025-01-01 00:00:00+01:00"
 
 
 def load_site_meta(path: str | Path) -> dict:
@@ -36,49 +40,95 @@ def load_site_meta(path: str | Path) -> dict:
     return meta
 
 
-def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
-    """Load weather CSV, validate columns, and localize to timezone.
+def _invalid_time_examples(time_series: pd.Series, mask: pd.Series) -> str:
+    examples = time_series.loc[mask].astype(str).head(5).tolist()
+    return ", ".join(examples)
 
-    The weather file is expected to contain local timestamps (no UTC offset).
-    We localize to the provided timezone (e.g. Europe/Berlin) so pvlib can
-    calculate solar geometry correctly.
+
+def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
+    """Load weather CSV, validate columns, and return UTC-indexed data.
+
+    Only one strict format is accepted:
+    - Semicolon-separated CSV with header: time;ghi;dhi;t_luft;v_wind
+    - Time strings formatted as YYYY-MM-DD HH:MM:SS±HH:MM (timezone offset required)
+    - 15-minute continuous resolution
     """
     weather_path = Path(path)
     if not weather_path.exists():
         raise FileNotFoundError(f"Weather CSV not found: {weather_path}")
 
-    # Read the CSV (comma or semicolon separators are supported).
-    weather = pd.read_csv(weather_path, sep=None, engine="python")
-    if len(weather.columns) == 1 and ";" in weather.columns[0]:
+    try:
         weather = pd.read_csv(weather_path, sep=";")
-    weather.columns = [col.strip().lstrip("\ufeff") for col in weather.columns]
-    missing = REQUIRED_WEATHER_COLUMNS - set(weather.columns)
-    if missing:
-        missing_str = ", ".join(sorted(missing))
-        raise ValueError(f"Weather data missing required columns: {missing_str}")
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "Expected a semicolon-separated CSV (sep=';') with header: "
+            f"{EXPECTED_HEADER}"
+        ) from exc
 
-    # Parse timestamps; invalid strings become NaT and are rejected below.
-    weather["time"] = pd.to_datetime(weather["time"], errors="coerce")
-    if weather["time"].isna().any():
-        raise ValueError("Weather data contains invalid timestamps in 'time' column")
-
-    # Localize or convert timestamps to the site timezone.
-    if weather["time"].dt.tz is not None:
-        localized = weather["time"].dt.tz_convert(tz)
-    else:
-        # Localize timestamps to the site timezone. Handling for DST transitions:
-        # - ambiguous="NaT": mark repeated hours when DST ends
-        # - nonexistent="shift_forward": shift forward for missing hour when DST starts
-        localized = weather["time"].dt.tz_localize(
-            tz, ambiguous="NaT", nonexistent="shift_forward"
+    if list(weather.columns) != REQUIRED_WEATHER_COLUMNS:
+        found = ", ".join(weather.columns)
+        raise ValueError(
+            "Weather data columns do not match expected header. "
+            f"Found: {found}. Expected: {EXPECTED_HEADER}"
         )
-        if localized.isna().any():
-            # Drop ambiguous entries for naive, DST-blind time series.
-            weather = weather.loc[~localized.isna()].copy()
-            localized = localized.dropna()
 
-    # Use time as the index for easier alignment in pvlib calculations.
-    weather = weather.set_index(localized).drop(columns=["time"])
+    if "time" not in weather.columns:
+        raise ValueError(
+            "Weather data missing 'time' column. Expected header: "
+            f"{EXPECTED_HEADER}"
+        )
+
+    time_series = weather["time"].astype(str)
+    invalid_mask = ~time_series.str.match(TIME_PATTERN)
+    if invalid_mask.any():
+        invalid_count = int(invalid_mask.sum())
+        examples = _invalid_time_examples(time_series, invalid_mask)
+        raise ValueError(
+            "Weather data contains timestamps that do not match the required format. "
+            f"Invalid count: {invalid_count}. Examples: {examples}. "
+            "Expected format: YYYY-MM-DD HH:MM:SS±HH:MM, "
+            f"e.g. {EXAMPLE_TIMESTAMP}."
+        )
+
+    timestamps = pd.to_datetime(time_series, utc=True, errors="coerce")
+    nat_mask = timestamps.isna()
+    if nat_mask.any():
+        invalid_count = int(nat_mask.sum())
+        examples = _invalid_time_examples(time_series, nat_mask)
+        raise ValueError(
+            "Weather data contains unparsable timestamps after UTC conversion. "
+            f"Invalid count: {invalid_count}. Examples: {examples}. "
+            "Expected format: YYYY-MM-DD HH:MM:SS±HH:MM, "
+            f"e.g. {EXAMPLE_TIMESTAMP}."
+        )
+
+    weather = weather.set_index(timestamps)
     weather.index.name = "time"
+    weather = weather.sort_index()
+
+    duplicate_mask = weather.index.duplicated(keep=False)
+    if duplicate_mask.any():
+        duplicate_count = int(duplicate_mask.sum())
+        examples = ", ".join(weather.index[duplicate_mask].astype(str).unique()[:5])
+        raise ValueError(
+            "Weather data contains duplicate timestamps. "
+            f"Duplicate count: {duplicate_count}. Examples: {examples}."
+        )
+
+    time_diffs = weather.index.to_series().diff().dropna()
+    expected_step = pd.Timedelta(minutes=15)
+    irregular_mask = time_diffs != expected_step
+    if irregular_mask.any():
+        irregular_indices = time_diffs[irregular_mask].index
+        examples = []
+        for current in irregular_indices[:5]:
+            previous = current - time_diffs.loc[current]
+            examples.append(f"{previous} -> {current}")
+        raise ValueError(
+            "Weather data has irregular time steps. "
+            f"Irregular count: {int(irregular_mask.sum())}. "
+            f"Examples: {', '.join(examples)}. "
+            "Expected resolution is exactly 15 minutes."
+        )
 
     return weather
