@@ -68,9 +68,16 @@ def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
         )
     except Exception:
         # If inference fails (e.g., repeated hour cannot be resolved), mark
-        # ambiguous timestamps as NaT and drop them below with a clear error.
+        # ambiguous timestamps as NaT and resolve them explicitly below.
         localized = weather["time"].dt.tz_localize(
             tz, ambiguous="NaT", nonexistent="shift_forward"
+        )
+    if localized.isna().any():
+        # Resolve remaining ambiguous timestamps by choosing standard time
+        # (ambiguous=False). This avoids failing on the DST fall-back hour.
+        ambiguous_mask = localized.isna()
+        localized.loc[ambiguous_mask] = weather.loc[ambiguous_mask, "time"].dt.tz_localize(
+            tz, ambiguous=False, nonexistent="shift_forward"
         )
     if localized.isna().any():
         raise ValueError("Weather data timestamps could not be localized")
