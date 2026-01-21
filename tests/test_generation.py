@@ -12,10 +12,10 @@ def _write_weather_csv(path: Path) -> None:
     weather = pd.DataFrame(
         {
             "time": [
-                "2025-01-01 10:00",
-                "2025-01-01 10:15",
-                "2025-01-01 10:30",
-                "2025-01-01 10:45",
+                "2025-01-01 10:00:00+01:00",
+                "2025-01-01 10:15:00+01:00",
+                "2025-01-01 10:30:00+01:00",
+                "2025-01-01 10:45:00+01:00",
             ],
             "ghi": [500, 520, 530, 540],
             "dhi": [100, 110, 120, 130],
@@ -23,7 +23,7 @@ def _write_weather_csv(path: Path) -> None:
             "v_wind": [2, 2, 3, 3],
         }
     )
-    weather.to_csv(path, index=False)
+    weather.to_csv(path, index=False, sep=";")
 
 
 def _write_meta(path: Path) -> None:
@@ -34,7 +34,7 @@ def _write_meta(path: Path) -> None:
 
 def test_load_weather_localizes_timezone(tmp_path: Path) -> None:
     """Verify timestamps are localized to Europe/Berlin."""
-    weather_path = tmp_path / "wetter-htw-2025.csv"
+    weather_path = tmp_path / "wetter-htw-2025-utc.csv"
     _write_weather_csv(weather_path)
 
     weather = load_weather(weather_path, "Europe/Berlin")
@@ -44,7 +44,7 @@ def test_load_weather_localizes_timezone(tmp_path: Path) -> None:
 
 def test_generation_outputs_match_input_length(tmp_path: Path) -> None:
     """Check output length and metadata rows match expectations."""
-    weather_path = tmp_path / "wetter-htw-2025.csv"
+    weather_path = tmp_path / "wetter-htw-2025-utc.csv"
     meta_path = tmp_path / "meta.json"
     out_dir = tmp_path / "outputs"
     _write_weather_csv(weather_path)
