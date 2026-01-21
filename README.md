@@ -11,3 +11,25 @@ using pvlib. Intended for testing PV orientation and shading inference methods.
 
 ## Status
 Work in progress.
+
+## Usage
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Generate synthetic systems:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/weather.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs \
+  --n-systems 30 \
+  --seed 42
+```
+
+Outputs:
+- Per-system CSVs at `outputs/system_<id>.csv`
+- `outputs/systems_metadata.csv` for system definitions
