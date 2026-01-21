@@ -47,8 +47,8 @@ def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
     if not weather_path.exists():
         raise FileNotFoundError(f"Weather CSV not found: {weather_path}")
 
-    # Read the CSV as-is; validation happens below.
-    weather = pd.read_csv(weather_path)
+    # Read the CSV (comma or semicolon separators are supported).
+    weather = pd.read_csv(weather_path, sep=None, engine="python")
     missing = REQUIRED_WEATHER_COLUMNS - set(weather.columns)
     if missing:
         missing_str = ", ".join(sorted(missing))

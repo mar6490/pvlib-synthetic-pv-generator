@@ -23,7 +23,7 @@ def _write_weather_csv(path: Path) -> None:
             "v_wind": [2, 2, 3, 3],
         }
     )
-    weather.to_csv(path, index=False)
+    weather.to_csv(path, index=False, sep=";")
 
 
 def _write_meta(path: Path) -> None:

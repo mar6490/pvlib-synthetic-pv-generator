@@ -25,6 +25,7 @@ Work in progress.
 
 ## Inputs
 - Weather data CSV with columns: `time`, `ghi`, `dhi`, `t_luft`, `v_wind`.
+  - Trennzeichen: Komma oder Semikolon (z. B. `;`).
 - Site metadata JSON containing at least `lat`, `lon`, and `tz` (e.g. `Europe/Berlin`).
   - Hinweis: Wenn die Zeitstempel bereits timezone-aware sind (z. B. `+01:00`/`+02:00`),
     werden sie direkt nach `tz` konvertiert. Für naive, DST-blinde Reihen wird die
