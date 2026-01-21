@@ -82,3 +82,9 @@ Outputs:
 - Combined orientation:
   - East–West systems are modeled as two sub-arrays (90° and 270°) with the
     total kWp split evenly.
+
+## Shading behavior
+- Shading is sampled per system from: `none`, `morning`, `evening`, `midday`.
+- Yes, there are systems without shading (`none`).
+- Shading does not change over the year in this implementation; it is applied
+  consistently by time-of-day (e.g., mornings or midday) regardless of month.
