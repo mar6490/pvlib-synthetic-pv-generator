@@ -62,9 +62,16 @@ def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
     # Localize timestamps to the site timezone. Handling for DST transitions:
     # - ambiguous="infer": let pandas infer repeated hour when DST ends
     # - nonexistent="shift_forward": shift forward for missing hour when DST starts
-    localized = weather["time"].dt.tz_localize(
-        tz, ambiguous="infer", nonexistent="shift_forward"
-    )
+    try:
+        localized = weather["time"].dt.tz_localize(
+            tz, ambiguous="infer", nonexistent="shift_forward"
+        )
+    except Exception:
+        # If inference fails (e.g., repeated hour cannot be resolved), mark
+        # ambiguous timestamps as NaT and drop them below with a clear error.
+        localized = weather["time"].dt.tz_localize(
+            tz, ambiguous="NaT", nonexistent="shift_forward"
+        )
     if localized.isna().any():
         raise ValueError("Weather data timestamps could not be localized")
 
