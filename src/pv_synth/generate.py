@@ -1,4 +1,8 @@
-"""Synthetic PV generation pipeline."""
+"""Synthetic PV generation pipeline.
+
+This module wires together input loading, scenario generation, PV modeling,
+and CSV output writing.
+"""
 
 from __future__ import annotations
 
@@ -18,8 +22,11 @@ def generate_systems(
     n_systems: int,
     seed: int | None = None,
 ) -> None:
+    """Generate synthetic PV systems and write outputs to disk."""
+    # Load metadata (lat/lon/timezone) and the weather data.
     meta = load_site_meta(meta_path)
     weather = load_weather(weather_path, meta["tz"])
+    # Create randomized system scenarios.
     scenarios = generate_scenarios(n_systems, seed=seed)
 
     output_path = Path(out_dir)
@@ -27,8 +34,10 @@ def generate_systems(
 
     metadata_rows = []
     for config in scenarios:
+        # Run pvlib modeling for each system configuration.
         system_df = simulate_system(weather, meta, config)
         system_id = f"{config.system_id:03d}"
+        # Write per-system CSV with time, DC, and AC power.
         system_df.to_csv(output_path / f"system_{system_id}.csv", index=False)
         metadata_rows.append({
             "system_id": config.system_id,
@@ -41,5 +50,6 @@ def generate_systems(
             "shading_type": config.shading_type,
         })
 
+    # Write a consolidated metadata file for all systems.
     metadata_df = pd.DataFrame(metadata_rows)
     metadata_df.to_csv(output_path / "systems_metadata.csv", index=False)

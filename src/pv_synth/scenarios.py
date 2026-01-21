@@ -1,4 +1,9 @@
-"""Scenario generation for synthetic systems."""
+"""Scenario generation for synthetic systems.
+
+The scenarios represent different residential PV configurations typical for
+Germany/Austria/Switzerland (DACH) with variability in size, tilt, azimuth,
+losses, and DC/AC ratio.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ from pv_synth.pv_models import SystemConfig
 
 
 def _sample_azimuth(system_type: str, rng: np.random.Generator) -> float | None:
+    """Sample an azimuth appropriate for each system orientation."""
     if system_type == "south":
         return float(np.clip(rng.normal(180, 15), 135, 225))
     if system_type == "east":
@@ -23,7 +29,9 @@ def _sample_azimuth(system_type: str, rng: np.random.Generator) -> float | None:
 
 
 def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemConfig]:
+    """Generate randomized system scenarios with required orientation coverage."""
     rng = np.random.default_rng(seed)
+    # Ensure at least one east-west system, then fill the rest with single-tilt types.
     base_types = ["east-west", "south", "east", "west"]
     types = base_types[: min(n_systems, len(base_types))]
     while len(types) < n_systems:
@@ -31,6 +39,7 @@ def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemCo
 
     scenarios: List[SystemConfig] = []
     for idx, system_type in enumerate(types, start=1):
+        # Draw values from realistic residential ranges.
         kwp = float(rng.uniform(3, 15))
         tilt = float(rng.uniform(10, 45))
         azimuth = _sample_azimuth(system_type, rng)
@@ -54,6 +63,7 @@ def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemCo
 
 
 def scenarios_to_metadata(scenarios: List[SystemConfig]) -> list[dict]:
+    """Convert scenario objects to a list of metadata dicts for CSV output."""
     metadata = []
     for config in scenarios:
         row = asdict(config)

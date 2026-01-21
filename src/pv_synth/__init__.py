@@ -1,4 +1,7 @@
-"""pvlib synthetic PV generator package."""
+"""pvlib synthetic PV generator package.
+
+Exports the main functions so users can import them directly.
+"""
 
 from pv_synth.generate import generate_systems
 from pv_synth.io import load_site_meta, load_weather

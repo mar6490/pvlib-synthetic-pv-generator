@@ -1,4 +1,7 @@
-"""CLI for generating synthetic PV systems."""
+"""CLI for generating synthetic PV systems.
+
+This script parses command-line arguments and calls the generation pipeline.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +11,7 @@ from pv_synth.generate import generate_systems
 
 
 def parse_args() -> argparse.Namespace:
+    """Define and parse CLI arguments."""
     parser = argparse.ArgumentParser(description="Generate synthetic PV time series.")
     parser.add_argument("--weather", required=True, help="Path to weather CSV")
     parser.add_argument("--meta", required=True, help="Path to site metadata JSON")
@@ -18,6 +22,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Entry point used when running the script directly."""
     args = parse_args()
     generate_systems(
         weather_path=args.weather,

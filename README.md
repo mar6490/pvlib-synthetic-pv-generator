@@ -3,6 +3,9 @@
 Generate synthetic residential PV power time series from measured weather data
 using pvlib. Intended for testing PV orientation and shading inference methods.
 
+This repository reads an existing weather file (no new weather data is created)
+and produces multiple PV system time series plus a metadata summary.
+
 ## Features
 - 15-minute resolution
 - Typical residential systems (DACH)
@@ -11,6 +14,18 @@ using pvlib. Intended for testing PV orientation and shading inference methods.
 
 ## Status
 Work in progress.
+
+## What this repository does
+- Reads 15-minute weather data (GHI, DHI, air temperature, wind speed) from a CSV.
+- Computes solar position, derived DNI, POA irradiance, cell temperature, and DC/AC
+  power using pvlib (PVWatts models).
+- Generates multiple residential PV scenarios typical for DACH, including south,
+  east, west, and combined east-west orientations.
+- Writes per-system CSVs containing DC and AC power and a consolidated metadata file.
+
+## Inputs
+- Weather data CSV with columns: `time`, `ghi`, `dhi`, `t_luft`, `v_wind`.
+- Site metadata JSON containing at least `lat`, `lon`, and `tz` (e.g. `Europe/Berlin`).
 
 ## Usage
 Install dependencies:
@@ -33,3 +48,12 @@ python scripts/generate_synthetic_pv.py \
 Outputs:
 - Per-system CSVs at `outputs/system_<id>.csv`
 - `outputs/systems_metadata.csv` for system definitions
+
+## Output details
+- `outputs/system_<id>.csv` columns:
+  - `time`: localized timestamps (Europe/Berlin)
+  - `dc_power_w`: DC power in watts
+  - `ac_power_w`: AC power in watts (after inverter clipping)
+- `outputs/systems_metadata.csv` columns:
+  - `system_id`, `system_type`, `kwp`, `tilt`, `azimuth`, `dc_ac_ratio`,
+    `losses`, `shading_type`

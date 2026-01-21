@@ -8,6 +8,7 @@ from pv_synth.io import load_weather
 
 
 def _write_weather_csv(path: Path) -> None:
+    """Create a small weather CSV fixture for testing."""
     weather = pd.DataFrame(
         {
             "time": [
@@ -26,11 +27,13 @@ def _write_weather_csv(path: Path) -> None:
 
 
 def _write_meta(path: Path) -> None:
+    """Create a minimal metadata JSON fixture for testing."""
     meta = {"lat": 52.5, "lon": 13.4, "tz": "Europe/Berlin"}
     path.write_text(json.dumps(meta), encoding="utf-8")
 
 
 def test_load_weather_localizes_timezone(tmp_path: Path) -> None:
+    """Verify timestamps are localized to Europe/Berlin."""
     weather_path = tmp_path / "wetter-htw-2025.csv"
     _write_weather_csv(weather_path)
 
@@ -40,6 +43,7 @@ def test_load_weather_localizes_timezone(tmp_path: Path) -> None:
 
 
 def test_generation_outputs_match_input_length(tmp_path: Path) -> None:
+    """Check output length and metadata rows match expectations."""
     weather_path = tmp_path / "wetter-htw-2025.csv"
     meta_path = tmp_path / "meta.json"
     out_dir = tmp_path / "outputs"
