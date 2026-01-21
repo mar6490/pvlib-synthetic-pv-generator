@@ -71,3 +71,14 @@ Outputs:
 - `outputs/systems_metadata.csv` columns:
   - `system_id`, `system_type`, `kwp`, `tilt`, `azimuth`, `dc_ac_ratio`,
     `losses`, `shading_type`
+
+## System ranges and orientations
+- kWp range: 3–15 kWp (randomized per system).
+- Tilt range: 10–45 degrees.
+- Azimuth ranges (degrees):
+  - South-facing: centered around 180°, clipped to 135–225°.
+  - East-facing: centered around 90°, clipped to 70–110°.
+  - West-facing: centered around 270°, clipped to 250–290°.
+- Combined orientation:
+  - East–West systems are modeled as two sub-arrays (90° and 270°) with the
+    total kWp split evenly.
