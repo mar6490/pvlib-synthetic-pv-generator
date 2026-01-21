@@ -26,8 +26,9 @@ Work in progress.
 ## Inputs
 - Weather data CSV with columns: `time`, `ghi`, `dhi`, `t_luft`, `v_wind`.
 - Site metadata JSON containing at least `lat`, `lon`, and `tz` (e.g. `Europe/Berlin`).
-  - Hinweis: Bei DST-blinden Zeitreihen wird die doppelte Stunde beim Wechsel
-    auf Winterzeit automatisch entfernt, damit die Lokalisierung stabil bleibt.
+  - Hinweis: Wenn die Zeitstempel bereits timezone-aware sind (z. B. `+01:00`/`+02:00`),
+    werden sie direkt nach `tz` konvertiert. Für naive, DST-blinde Reihen wird die
+    doppelte Stunde beim Wechsel auf Winterzeit entfernt.
 
 ## Usage
 Install dependencies:
@@ -40,7 +41,7 @@ Generate synthetic systems:
 
 ```bash
 python scripts/generate_synthetic_pv.py \
-  --weather data/wetter-htw-2025.csv \
+  --weather data/wetter-htw-2025-utc.csv \
   --meta data/site_meta.json \
   --out-dir outputs \
   --n-systems 30 \

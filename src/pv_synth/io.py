@@ -59,16 +59,20 @@ def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
     if weather["time"].isna().any():
         raise ValueError("Weather data contains invalid timestamps in 'time' column")
 
-    # Localize timestamps to the site timezone. Handling for DST transitions:
-    # - ambiguous="NaT": mark repeated hours when DST ends
-    # - nonexistent="shift_forward": shift forward for missing hour when DST starts
-    localized = weather["time"].dt.tz_localize(
-        tz, ambiguous="NaT", nonexistent="shift_forward"
-    )
-    if localized.isna().any():
-        # Drop ambiguous entries for naive, DST-blind time series.
-        weather = weather.loc[~localized.isna()].copy()
-        localized = localized.dropna()
+    # Localize or convert timestamps to the site timezone.
+    if weather["time"].dt.tz is not None:
+        localized = weather["time"].dt.tz_convert(tz)
+    else:
+        # Localize timestamps to the site timezone. Handling for DST transitions:
+        # - ambiguous="NaT": mark repeated hours when DST ends
+        # - nonexistent="shift_forward": shift forward for missing hour when DST starts
+        localized = weather["time"].dt.tz_localize(
+            tz, ambiguous="NaT", nonexistent="shift_forward"
+        )
+        if localized.isna().any():
+            # Drop ambiguous entries for naive, DST-blind time series.
+            weather = weather.loc[~localized.isna()].copy()
+            localized = localized.dropna()
 
     # Use time as the index for easier alignment in pvlib calculations.
     weather = weather.set_index(localized).drop(columns=["time"])
