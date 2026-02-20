@@ -34,6 +34,24 @@ def _system_sort_key(path: Path) -> tuple[int, str]:
     return 10**9, path.name
 
 
+def _heatmap_extent_from_minute_index(minute_index: np.ndarray) -> tuple[float, float, int]:
+    """Compute y-extent for imshow from real minute-of-day coordinates."""
+    if minute_index.size == 0:
+        return 0.0, 1440.0, 1
+
+    minute_sorted = np.sort(minute_index.astype(int))
+    if minute_sorted.size >= 2:
+        diffs = np.diff(minute_sorted)
+        diffs = diffs[diffs > 0]
+        step = int(diffs.min()) if diffs.size else 1
+    else:
+        step = 1
+
+    y0 = float(minute_sorted.min())
+    y1 = float(minute_sorted.max() + step)
+    return y0, y1, step
+
+
 def find_system_csvs(in_dir: Path, pattern: str = "system_*.csv") -> list[Path]:
     """Find and sort system CSV files in a directory."""
     files = [path for path in in_dir.glob(pattern) if path.is_file()]
@@ -78,42 +96,59 @@ def make_ac_heatmap(df: pd.DataFrame, ax: Any, clip_quantile: float = 0.995) -> 
         ax.set_axis_off()
         return
 
-    work["day"] = work.index.normalize()
-    work["minute_of_day"] = _minute_of_day(work.index)
-    grid = work.pivot_table(
-        index="minute_of_day",
-        columns="day",
-        values="ac_power_w",
-        aggfunc="median",
+    minutes = _minute_of_day(work.index)
+    dates = work.index.normalize()
+    tmp = pd.DataFrame(
+        {
+            "date": dates,
+            "minute": minutes.to_numpy(),
+            "p": work["ac_power_w"].to_numpy(),
+        }
+    )
+    mat = tmp.pivot_table(
+        index="minute",
+        columns="date",
+        values="p",
+        aggfunc="mean",
     ).sort_index(axis=0).sort_index(axis=1)
 
-    if grid.empty:
+    if mat.empty:
         ax.set_title("AC Heatmap (no data)")
         ax.set_axis_off()
         return
 
-    vmax = float(np.nanquantile(work["ac_power_w"].to_numpy(), clip_quantile))
+    arr = mat.to_numpy()
+    arr_plot = np.nan_to_num(arr, nan=0.0)
+
+    minute_index = mat.index.to_numpy()
+    y0, y1, _ = _heatmap_extent_from_minute_index(minute_index)
+
+    ncols = arr_plot.shape[1]
+    extent = [0, ncols, y0, y1]
+
+    vmax = float(np.nanquantile(arr_plot, clip_quantile))
     vmax = vmax if vmax > 0 else 1.0
 
     im = ax.imshow(
-        grid.to_numpy(),
+        arr_plot,
         origin="lower",
         aspect="auto",
         interpolation="nearest",
-        vmin=0,
+        vmin=0.0,
         vmax=vmax,
+        extent=extent,
     )
     ax.set_title("AC Heatmap")
-    ax.set_ylabel("Minute of day")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Time of day")
 
     y_ticks = [0, 360, 720, 1080, 1440]
     ax.set_yticks(y_ticks)
     ax.set_yticklabels(["00:00", "06:00", "12:00", "18:00", "24:00"])
 
-    n_cols = grid.shape[1]
-    x_ticks = np.linspace(0, max(n_cols - 1, 0), num=min(6, n_cols), dtype=int)
-    labels = [pd.Timestamp(grid.columns[idx]).strftime("%Y-%m") for idx in x_ticks]
-    ax.set_xticks(x_ticks)
+    x_ticks = np.linspace(0, max(ncols - 1, 0), num=min(6, ncols), dtype=int)
+    labels = [pd.Timestamp(mat.columns[idx]).strftime("%Y-%m") for idx in x_ticks]
+    ax.set_xticks(x_ticks + 0.5)
     ax.set_xticklabels(labels, rotation=0)
 
     plt.colorbar(im, ax=ax, label="AC power [W]")
