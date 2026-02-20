@@ -169,6 +169,34 @@ Metadata file: `systems_metadata.csv`
 - `dc_ac_ratio`
 - `losses`
 
+
+## Quicklook plots
+
+You can create AC-only quicklook figures for existing generated systems (independent from generation):
+
+```bash
+python scripts/quicklook_systems.py --in-dir outputs --out-dir outputs/quicklooks
+```
+
+Or via glob:
+
+```bash
+python scripts/quicklook_systems.py --glob "outputs/system_*.csv" --out-dir outputs/quicklooks
+```
+
+Each system gets one PNG with 3 panels:
+- AC heatmap (date vs minute-of-day)
+- Median daily AC profile (optionally normalized)
+- Representative 7-day AC window around max-energy day
+
+Optional convenience hook during generation:
+
+```bash
+python scripts/generate_synthetic_pv.py ... --quicklook
+```
+
+Use `--quicklook-dir` to override the default output folder (`<out-dir>/quicklooks`).
+
 ## Reproducibility
 
 Use `--seed` for deterministic generation.

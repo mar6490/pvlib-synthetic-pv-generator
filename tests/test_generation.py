@@ -1,4 +1,6 @@
+import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -229,3 +231,35 @@ def test_metadata_contains_lat_lon(tmp_path: Path) -> None:
     assert "lon" in metadata_df.columns
     assert (metadata_df["lat"] == 52.5).all()
     assert (metadata_df["lon"] == 13.4).all()
+
+
+def test_generate_cli_with_quicklook_hook(tmp_path: Path) -> None:
+    if importlib.util.find_spec("matplotlib") is None:
+        return
+    weather_path, meta_path = _prepare_inputs(tmp_path)
+    out_dir = tmp_path / "outputs_cli"
+    quicklook_dir = tmp_path / "ql_cli"
+
+    subprocess.run(
+        [
+            "python",
+            "scripts/generate_synthetic_pv.py",
+            "--weather",
+            str(weather_path),
+            "--meta",
+            str(meta_path),
+            "--out-dir",
+            str(out_dir),
+            "--n-systems",
+            "1",
+            "--seed",
+            "1",
+            "--quicklook",
+            "--quicklook-dir",
+            str(quicklook_dir),
+        ],
+        check=True,
+    )
+
+    assert (out_dir / "system_001.csv").exists()
+    assert (quicklook_dir / "system_001_quicklook.png").exists()

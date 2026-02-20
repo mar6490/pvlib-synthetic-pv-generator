@@ -12,6 +12,7 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 from pv_synth.generate import generate_systems  # noqa: E402
+from pv_synth.quicklook import plot_quicklooks_for_dir  # noqa: E402
 from pv_synth.scenarios import parse_mix_weights, parse_n_by_type, parse_tilt_range  # noqa: E402
 
 
@@ -63,6 +64,17 @@ def parse_args() -> argparse.Namespace:
         help="Override east-west tilt range as 'min,max'",
     )
 
+    parser.add_argument(
+        "--quicklook",
+        action="store_true",
+        help="Generate quicklook plots after successful generation",
+    )
+    parser.add_argument(
+        "--quicklook-dir",
+        default=None,
+        help="Optional directory for quicklook images (defaults to <out-dir>/quicklooks)",
+    )
+
     args = parser.parse_args()
     try:
         args.mix_weights = parse_mix_weights(args.mix_weights)
@@ -96,6 +108,20 @@ def main() -> None:
         ew_azimuth_jitter_deg=args.ew_azimuth_jitter_deg,
         ew_tilt_range_deg=args.ew_tilt_range_deg,
     )
+
+    if args.quicklook:
+        ql_dir = Path(args.quicklook_dir) if args.quicklook_dir else Path(args.out_dir) / "quicklooks"
+        stats = plot_quicklooks_for_dir(
+            in_dir=Path(args.out_dir),
+            out_dir=ql_dir,
+            normalize=True,
+            overwrite=False,
+            fmt="png",
+        )
+        print(
+            "Quicklook summary: "
+            f"found={stats['found']}, plotted={stats['plotted']}, skipped={stats['skipped']}, errors={stats['errors']}"
+        )
 
 
 if __name__ == "__main__":
