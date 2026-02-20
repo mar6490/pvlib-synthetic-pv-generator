@@ -1,15 +1,4 @@
-"""Physical PV simulation functions based on pvlib.
-
-High-level flow:
-1) Compute sun position for each timestamp.
-2) Derive DNI from measured GHI and DHI.
-3) Transpose irradiance onto module plane (POA).
-4) Estimate cell temperature.
-5) Compute DC power (PVWatts DC model).
-6) Convert DC to AC and apply inverter clipping (PVWatts inverter model).
-
-This module intentionally does **not** apply synthetic shading.
-"""
+"""Physical PV simulation functions based on pvlib."""
 
 from __future__ import annotations
 
@@ -21,19 +10,14 @@ import pvlib
 
 @dataclass
 class SystemConfig:
-    """Configuration parameters for one synthetic PV system.
-
-    Field glossary (non-technical wording):
-    - ``kwp``: nominal panel size at standard test conditions.
-    - ``tilt``: roof/module inclination angle in degrees.
-    - ``azimuth``: compass direction in degrees (None for east-west split).
-    - ``dc_ac_ratio``: sizing ratio between panel DC peak and inverter AC peak.
-    - ``losses``: aggregate fractional losses (cables, mismatch, dirt, etc.).
-    """
+    """Configuration parameters for one synthetic PV system."""
 
     system_id: int
     system_type: str
-    kwp: float
+    plane_type: str | None
+    kwp_total: float
+    kwp_east: float | None
+    kwp_west: float | None
     tilt: float
     azimuth: float | None
     dc_ac_ratio: float
@@ -41,7 +25,6 @@ class SystemConfig:
 
 
 def _solar_position(times: pd.DatetimeIndex, meta: dict) -> pd.DataFrame:
-    """Compute solar geometry (zenith, azimuth, ...) for each timestamp."""
     return pvlib.solarposition.get_solarposition(
         times,
         latitude=meta["lat"],
@@ -51,7 +34,6 @@ def _solar_position(times: pd.DatetimeIndex, meta: dict) -> pd.DataFrame:
 
 
 def _dni_from_ghi_dhi(ghi: pd.Series, dhi: pd.Series, zenith: pd.Series) -> pd.Series:
-    """Estimate direct normal irradiance (DNI) from available weather channels."""
     dni = pvlib.irradiance.dni(ghi=ghi, dhi=dhi, zenith=zenith)
     return dni.clip(lower=0)
 
@@ -64,7 +46,6 @@ def _poa_irradiance(
     tilt: float,
     azimuth: float,
 ) -> pd.Series:
-    """Compute plane-of-array irradiance for a module surface orientation."""
     poa = pvlib.irradiance.get_total_irradiance(
         surface_tilt=tilt,
         surface_azimuth=azimuth,
@@ -83,9 +64,6 @@ def _dc_power(
     wind_speed: pd.Series,
     kwp: float,
 ) -> pd.Series:
-    """Compute PV array DC output using PVWatts-style equations."""
-    # pvlib's PVsyst temperature model estimates module cell temperature,
-    # which strongly influences power.
     temp_cell = pvlib.temperature.pvsyst_cell(
         poa_global, temp_air=temp_air, wind_speed=wind_speed
     )
@@ -99,12 +77,11 @@ def _dc_power(
 
 def _ac_power(
     dc_power: pd.Series,
-    kwp: float,
+    kwp_total: float,
     dc_ac_ratio: float,
     eta_inv_nom: float = 0.96,
 ) -> pd.Series:
-    """Convert DC to AC with nominal inverter efficiency and clipping."""
-    pac0 = kwp * 1000 / dc_ac_ratio
+    pac0 = kwp_total * 1000 / dc_ac_ratio
     pdc0 = pac0 / eta_inv_nom
     return pvlib.inverter.pvwatts(
         dc_power,
@@ -118,17 +95,13 @@ def simulate_system(
     meta: dict,
     config: SystemConfig,
 ) -> pd.DataFrame:
-    """Simulate one PV system and return a tidy time series dataframe.
-
-    East-west logic:
-    - Simulate an east sub-array (90°) and west sub-array (270°).
-    - Split total kWp equally between both sides.
-    - Sum DC outputs, apply losses once, then pass through one inverter model.
-    """
     solar_position = _solar_position(weather.index, meta)
     dni = _dni_from_ghi_dhi(weather["ghi"], weather["dhi"], solar_position["zenith"])
 
     if config.system_type == "east-west":
+        kwp_east = config.kwp_east if config.kwp_east is not None else config.kwp_total / 2
+        kwp_west = config.kwp_west if config.kwp_west is not None else config.kwp_total / 2
+
         poa_east = _poa_irradiance(
             solar_position,
             weather["ghi"],
@@ -146,9 +119,8 @@ def simulate_system(
             azimuth=270.0,
         )
 
-        dc_east = _dc_power(poa_east, weather["t_luft"], weather["v_wind"], config.kwp / 2)
-        dc_west = _dc_power(poa_west, weather["t_luft"], weather["v_wind"], config.kwp / 2)
-
+        dc_east = _dc_power(poa_east, weather["t_luft"], weather["v_wind"], kwp_east)
+        dc_west = _dc_power(poa_west, weather["t_luft"], weather["v_wind"], kwp_west)
         dc_power = (dc_east + dc_west) * (1 - config.losses)
     else:
         poa = _poa_irradiance(
@@ -163,10 +135,10 @@ def simulate_system(
             poa,
             weather["t_luft"],
             weather["v_wind"],
-            config.kwp,
+            config.kwp_total,
         ) * (1 - config.losses)
 
-    ac_power = _ac_power(dc_power, config.kwp, config.dc_ac_ratio)
+    ac_power = _ac_power(dc_power, config.kwp_total, config.dc_ac_ratio)
 
     return pd.DataFrame(
         {

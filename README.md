@@ -1,49 +1,19 @@
 # Synthetic PV Profile Generator (pvlib-based)
 
-This project creates **synthetic photovoltaic (PV) power profiles** from real weather measurements.
+This project creates synthetic PV power profiles from measured weather data.
 
-In simple terms:
-- You provide measured weather data (sunlight, diffuse light, air temperature, wind).
-- The tool simulates many plausible home PV systems.
-- It writes time series files with simulated DC and AC power.
+## Key point
+Synthetic shading is removed. The generator produces unshaded systems only.
 
-> Important: synthetic shading has been removed. The generator now creates only systems **without synthetic obstruction shading**.
+## Usage
 
----
-
-## Who this is for
-
-- Energy analysts who need many realistic PV profiles for studies.
-- Data scientists who need simulation data for forecasting or clustering.
-- Non-programmers who want a reproducible way to create scenario data.
-
-You do **not** need to write Python code to use it. The command line script is enough.
-
----
-
-## What the application does (high-level)
-
-For each system, the pipeline does the following:
-
-1. Reads and validates your weather file.
-2. Reads site metadata (latitude, longitude, timezone).
-3. Randomly creates a PV system configuration (size, orientation, tilt, losses, inverter sizing).
-4. Calculates sun position at every timestamp.
-5. Converts weather irradiance to module-plane irradiance.
-6. Computes DC power and then AC power.
-7. Writes one CSV per system + one metadata CSV.
-
----
-
-## Quick start
-
-### 1) Install dependencies
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2) Run generation
+Generate profiles:
 
 ```bash
 python scripts/generate_synthetic_pv.py \
@@ -54,149 +24,127 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
-### 3) Check outputs
+## New system-type controls
 
-- `outputs/system_001.csv`, `outputs/system_002.csv`, ...
-- `outputs/systems_metadata.csv`
+### `--system-type`
+Controls which architecture is generated:
+- `single`: only single-plane systems
+- `east-west`: only two-plane east-west systems
+- `mixed`: random mix of single + east-west (default)
 
----
-
-## Input files
-
-### Weather CSV (strict format)
-
-The weather file must be semicolon-separated and must use exactly this header:
+### `--mix-weights`
+Used in `mixed` mode. Format:
 
 ```text
-time;ghi;dhi;t_luft;v_wind
+single=0.7,east-west=0.3
 ```
 
 Rules:
-- Separator: `;`
-- Time format: `YYYY-MM-DD HH:MM:SS±HH:MM` (offset required)
-- Resolution: continuous 15-minute steps
-- Required columns:
-  - `time`: timestamp with UTC offset
-  - `ghi`: global horizontal irradiance
-  - `dhi`: diffuse horizontal irradiance
-  - `t_luft`: air temperature
-  - `v_wind`: wind speed
+- keys only: `single`, `east-west`
+- values must be non-negative
+- sum must equal 1.0
 
-Example:
+Default: `single=0.7,east-west=0.3`
 
-```csv
-time;ghi;dhi;t_luft;v_wind
-2025-01-01 00:00:00+01:00;0;0;1.5;6.89
-2025-01-01 00:15:00+01:00;0;0;1.45;7.45
-2025-01-01 00:30:00+01:00;0;0;1.43;7.05
+### `--n-by-type`
+Optional explicit counts, overrides `--n-systems` and `--mix-weights`.
+
+Format:
+
+```text
+east-west=20,single=10
 ```
 
-### Site metadata JSON
+Rules:
+- keys only: `single`, `east-west`
+- values must be integers >= 0
+- total must be > 0
 
-Required keys:
+## Examples
 
-```json
-{
-  "lat": 52.5,
-  "lon": 13.4,
-  "tz": "Europe/Berlin"
-}
+20 east-west systems:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_ew \
+  --n-systems 20 \
+  --system-type east-west \
+  --seed 42
 ```
 
-Optional: `altitude`
+Only single-plane systems:
 
----
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_single \
+  --n-systems 20 \
+  --system-type single \
+  --seed 42
+```
 
-## Output files
+Mixed 50/50:
 
-### 1) Per-system power profile (`system_<id>.csv`)
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_mix \
+  --n-systems 40 \
+  --system-type mixed \
+  --mix-weights "single=0.5,east-west=0.5" \
+  --seed 42
+```
 
-Columns:
-- `time`: timestamp
-- `dc_power_w`: simulated DC power (W)
-- `ac_power_w`: simulated AC power (W)
+Explicit counts:
 
-### 2) Scenario metadata (`systems_metadata.csv`)
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_counts \
+  --n-by-type "east-west=20,single=10" \
+  --seed 42
+```
 
-Columns:
+## Input weather format
+
+Strict CSV format:
+- separator `;`
+- header exactly: `time;ghi;dhi;t_luft;v_wind`
+- timestamp format: `YYYY-MM-DD HH:MM:SS±HH:MM`
+- fixed 15-minute resolution
+
+## Output
+
+Per system file: `system_<id>.csv`
+- `time`
+- `dc_power_w`
+- `ac_power_w`
+
+Metadata file: `systems_metadata.csv`
 - `system_id`
-- `system_type` (`south`, `east`, `west`, `east-west`)
-- `kwp`
+- `system_type` (`single` or `east-west`)
+- `plane_type` (`south`/`east`/`west` for single; empty for east-west)
+- `kwp_total`
+- `kwp` (alias to `kwp_total`)
+- `kwp_east`, `kwp_west` (filled for east-west)
 - `tilt`
-- `azimuth` (`90/270` for east-west split systems)
+- `azimuth` (single scalar or `90/270` for east-west)
+- `azimuth_east`, `azimuth_west` (filled for east-west)
 - `dc_ac_ratio`
 - `losses`
 
----
-
-## Concept explained for non-programmers
-
-Think of this tool as a **virtual PV lab**.
-
-- The weather file is the “outside world”.
-- A scenario is a “virtual roof installation”.
-- The physical model calculates how much sunlight reaches the modules and how much electrical power comes out.
-
-### Why random scenarios?
-
-Real neighborhoods contain many different roof geometries and system sizes.
-The generator samples realistic ranges so your dataset contains natural diversity.
-
-### What is modeled physically?
-
-- **Sun position**: where the sun is in the sky at each timestamp.
-- **Irradiance transposition**: converts horizontal sunlight to tilted module sunlight.
-- **Cell temperature**: warmer modules produce less power.
-- **DC output**: calculated with PVWatts DC model.
-- **AC output**: inverter efficiency and clipping with PVWatts inverter model.
-
-### East-west systems
-
-East-west is represented as two sub-arrays:
-- one facing east (90°),
-- one facing west (270°),
-- each gets half of total kWp,
-- DC outputs are summed and converted to AC.
-
-### Losses
-
-The `losses` factor is a simple aggregate percentage for typical effects such as cable losses, mismatch, and soiling.
-
----
-
-## Code structure (architecture)
-
-- `scripts/generate_synthetic_pv.py`
-  - Command line entry point.
-- `src/pv_synth/io.py`
-  - Input loading and strict validation.
-- `src/pv_synth/scenarios.py`
-  - Random system scenario generation.
-- `src/pv_synth/pv_models.py`
-  - Physical simulation with pvlib.
-- `src/pv_synth/generate.py`
-  - End-to-end orchestration and CSV writing.
-
----
-
 ## Reproducibility
 
-Use `--seed` to get deterministic random scenarios.
-Same input + same seed = same synthetic systems.
+Use `--seed` for deterministic generation.
+Same input + same seed + same CLI options => same type distribution and parameter samples.
 
----
-
-## Notes and limitations
-
-- The tool does not create synthetic weather; it uses your measured weather input.
-- The model is simplified (PVWatts-based) and intended for realistic synthetic datasets, not detailed plant engineering.
-- Synthetic shading is intentionally disabled/removed.
-
----
-
-## Run tests
+## Tests
 
 ```bash
 pytest
 ```
-
