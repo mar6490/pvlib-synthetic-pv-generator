@@ -186,7 +186,7 @@ Metadata file: `systems_metadata.csv`
 You can create AC-only quicklook figures for existing generated systems (independent from generation):
 
 ```bash
-python scripts/quicklook_systems.py --in-dir outputs/2026-02-20_16-45-12
+python scripts/quicklook_systems.py --in-dir outputs/2026-02-20_16-45-12 --tz Europe/Berlin
 ```
 
 
@@ -195,6 +195,8 @@ Default standalone quicklook output for `--in-dir` is also timestamped:
 - output: `outputs/2026-02-20_16-45-12/quicklooks_YYYY-MM-DD_HH-MM-SS/`
 
 If you pass `--out-dir`, it is used directly (created if needed) without adding another timestamp subfolder.
+
+Times are parsed robustly with UTC (`pd.to_datetime(..., utc=True)`) and then optionally converted for plotting via `--tz` (default: `UTC`).
 
 Or via glob:
 

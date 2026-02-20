@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-normalize", dest="normalize", action="store_false")
     parser.add_argument("--format", choices=["png"], default="png")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing quicklook files")
+    parser.add_argument("--tz", default="UTC", help="Timezone for plotting (converted after UTC parsing)")
 
     args = parser.parse_args()
     if args.max_systems is not None and args.max_systems <= 0:
@@ -66,6 +67,7 @@ def _run_glob_mode(args: argparse.Namespace) -> dict[str, int]:
                 out_png,
                 normalize=args.normalize,
                 overwrite=args.overwrite,
+                tz=args.tz,
             )
             if written:
                 stats["plotted"] += 1
@@ -91,6 +93,7 @@ def main() -> None:
             normalize=args.normalize,
             overwrite=args.overwrite,
             fmt=args.format,
+            tz=args.tz,
         )
     else:
         stats = _run_glob_mode(args)

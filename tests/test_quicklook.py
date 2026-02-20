@@ -38,6 +38,26 @@ def _write_system_csv(path: Path, periods: int = 96 * 10) -> None:
     df.to_csv(path, index=False)
 
 
+def _write_dst_mixed_system_csv(path: Path) -> None:
+    # Explicit mixed offsets around DST switch to ensure robust utc parsing.
+    times = [
+        "2025-03-30 00:00:00+01:00",
+        "2025-03-30 00:15:00+01:00",
+        "2025-03-30 00:30:00+01:00",
+        "2025-03-30 03:00:00+02:00",
+        "2025-03-30 03:15:00+02:00",
+        "2025-03-30 03:30:00+02:00",
+    ]
+    df = pd.DataFrame(
+        {
+            "time": times,
+            "dc_power_w": [0, 0, 10, 500, 900, 1200],
+            "ac_power_w": [0, 0, 8, 450, 850, 1100],
+        }
+    )
+    df.to_csv(path, index=False)
+
+
 def test_find_system_csvs_and_load(tmp_path: Path) -> None:
     _write_system_csv(tmp_path / "system_010.csv")
     _write_system_csv(tmp_path / "system_002.csv")
@@ -49,6 +69,7 @@ def test_find_system_csvs_and_load(tmp_path: Path) -> None:
 
     loaded = load_system_csv(files[0])
     assert isinstance(loaded.index, pd.DatetimeIndex)
+    assert str(loaded.index.tz) == "UTC"
     assert "ac_power_w" in loaded.columns
 
 
@@ -63,6 +84,16 @@ def test_plot_system_quicklook_smoke(tmp_path: Path) -> None:
 
     written_again = plot_system_quicklook(system_csv, out_png, normalize=True, overwrite=False)
     assert written_again is False
+
+
+def test_plot_system_quicklook_dst_mixed_offsets_smoke(tmp_path: Path) -> None:
+    system_csv = tmp_path / "system_001.csv"
+    _write_dst_mixed_system_csv(system_csv)
+    out_png = tmp_path / "quicklooks" / "system_001_quicklook.png"
+
+    written = plot_system_quicklook(system_csv, out_png, normalize=True, overwrite=False, tz="Europe/Berlin")
+    assert written is True
+    assert out_png.exists()
 
 
 def test_plot_quicklooks_for_dir_smoke(tmp_path: Path) -> None:

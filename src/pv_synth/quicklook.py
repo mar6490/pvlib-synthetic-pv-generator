@@ -40,18 +40,23 @@ def find_system_csvs(in_dir: Path, pattern: str = "system_*.csv") -> list[Path]:
     return sorted(files, key=_system_sort_key)
 
 
-def load_system_csv(path: Path) -> pd.DataFrame:
-    """Load one system CSV as a time-indexed dataframe."""
+def load_system_csv(path: Path, tz: str = "UTC") -> pd.DataFrame:
+    """Load one system CSV as a timezone-aware, time-indexed dataframe."""
     df = pd.read_csv(path)
     if "time" not in df.columns:
         raise ValueError(f"Missing required 'time' column in {path}")
 
-    timestamps = pd.to_datetime(df["time"], errors="coerce")
+    # Parse as UTC to avoid mixed-timezone parsing warnings and errors.
+    timestamps = pd.to_datetime(df["time"], errors="coerce", utc=True)
     if timestamps.isna().all():
         raise ValueError(f"Could not parse any timestamps in {path}")
 
+    index = pd.DatetimeIndex(timestamps)
+    if tz != "UTC":
+        index = index.tz_convert(tz)
+
     df = df.copy()
-    df.index = timestamps
+    df.index = index
     df.index.name = "time"
     return df.sort_index()
 
@@ -73,11 +78,11 @@ def make_ac_heatmap(df: pd.DataFrame, ax: Any, clip_quantile: float = 0.995) -> 
         ax.set_axis_off()
         return
 
-    work["date"] = work.index.date
+    work["day"] = work.index.normalize()
     work["minute_of_day"] = _minute_of_day(work.index)
     grid = work.pivot_table(
         index="minute_of_day",
-        columns="date",
+        columns="day",
         values="ac_power_w",
         aggfunc="median",
     ).sort_index(axis=0).sort_index(axis=1)
@@ -197,6 +202,7 @@ def plot_system_quicklook(
     out_png: Path,
     normalize: bool = True,
     overwrite: bool = False,
+    tz: str = "UTC",
 ) -> bool:
     """Create a three-panel quicklook PNG for one system file.
 
@@ -207,7 +213,7 @@ def plot_system_quicklook(
     if out_png.exists() and not overwrite:
         return False
 
-    df = load_system_csv(system_csv)
+    df = load_system_csv(system_csv, tz=tz)
     if "ac_power_w" not in df.columns:
         raise ValueError(f"Missing required 'ac_power_w' column in {system_csv}")
 
@@ -231,6 +237,7 @@ def plot_quicklooks_for_dir(
     normalize: bool = True,
     overwrite: bool = False,
     fmt: str = "png",
+    tz: str = "UTC",
 ) -> dict[str, int]:
     """Generate quicklook files for a directory of system CSVs."""
     if fmt != "png":
@@ -250,6 +257,7 @@ def plot_quicklooks_for_dir(
                 out_file,
                 normalize=normalize,
                 overwrite=overwrite,
+                tz=tz,
             )
             if written:
                 stats["plotted"] += 1
