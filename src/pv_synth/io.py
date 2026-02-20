@@ -46,7 +46,7 @@ def _invalid_time_examples(time_series: pd.Series, mask: pd.Series) -> str:
 
 
 def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
-    """Load weather CSV, validate columns, and return UTC-indexed data.
+    """Load weather CSV, validate columns, and return timezone-aware data.
 
     Only one strict format is accepted:
     - Semicolon-separated CSV with header: time;ghi;dhi;t_luft;v_wind
@@ -90,6 +90,8 @@ def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
             f"e.g. {EXAMPLE_TIMESTAMP}."
         )
 
+    # Parse all timestamp strings as timezone-aware datetimes in UTC first.
+    # Parsing in UTC is robust because all inputs include an explicit offset.
     timestamps = pd.to_datetime(time_series, utc=True, errors="coerce")
     nat_mask = timestamps.isna()
     if nat_mask.any():
@@ -104,6 +106,10 @@ def load_weather(path: str | Path, tz: str) -> pd.DataFrame:
 
     weather = weather.set_index(timestamps)
     weather.index.name = "time"
+
+    # Convert the index to the site timezone from metadata.
+    # This keeps local-clock interpretation intuitive for users and tests.
+    weather.index = weather.index.tz_convert(tz)
     weather = weather.sort_index()
 
     duplicate_mask = weather.index.duplicated(keep=False)
