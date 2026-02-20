@@ -181,6 +181,7 @@ def scenarios_to_metadata(scenarios: List[SystemConfig]) -> list[dict]:
     metadata = []
     for config in scenarios:
         row = asdict(config)
+        # East-west systems have two fixed azimuths instead of one numeric value.
         row["azimuth"] = "90/270" if config.system_type == "east-west" else config.azimuth
         row["azimuth_east"] = 90.0 if config.system_type == "east-west" else None
         row["azimuth_west"] = 270.0 if config.system_type == "east-west" else None
