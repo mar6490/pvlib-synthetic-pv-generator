@@ -1,54 +1,49 @@
-# Synthetic PV Generator (pvlib)
+# Synthetic PV Profile Generator (pvlib-based)
 
-Generate synthetic residential PV power time series from measured weather data
-using pvlib. Intended for testing PV orientation and shading inference methods.
+This project creates **synthetic photovoltaic (PV) power profiles** from real weather measurements.
 
-This repository reads an existing weather file (no new weather data is created)
-and produces multiple PV system time series plus a metadata summary.
+In simple terms:
+- You provide measured weather data (sunlight, diffuse light, air temperature, wind).
+- The tool simulates many plausible home PV systems.
+- It writes time series files with simulated DC and AC power.
 
-## Features
-- 15-minute resolution
-- Typical residential systems (DACH)
-- Variable tilt, azimuth, size
-- pvlib-based physical modeling
+> Important: synthetic shading has been removed. The generator now creates only systems **without synthetic obstruction shading**.
 
-## Status
-Work in progress.
+---
 
-## What this repository does
-- Reads 15-minute weather data (GHI, DHI, air temperature, wind speed) from a CSV.
-- Computes solar position, derived DNI, POA irradiance, cell temperature, and DC/AC
-  power using pvlib (PVWatts models).
-- Generates multiple residential PV scenarios typical for DACH, including south,
-  east, west, and combined east-west orientations.
-- Writes per-system CSVs containing DC and AC power and a consolidated metadata file.
+## Who this is for
 
-## Weather input format (strict)
-The pipeline accepts **only one** weather file format and will fail fast otherwise:
-- CSV must be semicolon-separated (`;`).
-- Required header (case-sensitive): `time;ghi;dhi;t_luft;v_wind`.
-- `time` must include an explicit UTC offset (`±HH:MM`), e.g. `+01:00` or `+02:00`.
-- Resolution must be continuous at 15-minute intervals.
-- Internally, timestamps are converted to UTC.
+- Energy analysts who need many realistic PV profiles for studies.
+- Data scientists who need simulation data for forecasting or clustering.
+- Non-programmers who want a reproducible way to create scenario data.
 
-Example (copy/paste):
-```csv
-time;ghi;dhi;t_luft;v_wind
-2025-01-01 00:00:00+01:00;0;0;1.5;6.8933333333333335
-2025-01-01 00:15:00+01:00;0;0;1.4466666666666668;7.446666666666666
-2025-01-01 00:30:00+01:00;0;0;1.4333333333333333;7.053333333333334
-2025-01-01 00:45:00+01:00;0;0;1.4133333333333333;6.94
-2025-01-01 01:00:00+01:00;0;0;1.4533333333333334;7.006666666666667
-```
+You do **not** need to write Python code to use it. The command line script is enough.
 
-## Usage
-Install dependencies:
+---
+
+## What the application does (high-level)
+
+For each system, the pipeline does the following:
+
+1. Reads and validates your weather file.
+2. Reads site metadata (latitude, longitude, timezone).
+3. Randomly creates a PV system configuration (size, orientation, tilt, losses, inverter sizing).
+4. Calculates sun position at every timestamp.
+5. Converts weather irradiance to module-plane irradiance.
+6. Computes DC power and then AC power.
+7. Writes one CSV per system + one metadata CSV.
+
+---
+
+## Quick start
+
+### 1) Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Generate synthetic systems:
+### 2) Run generation
 
 ```bash
 python scripts/generate_synthetic_pv.py \
@@ -59,48 +54,149 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
-Outputs:
-- Per-system CSVs at `outputs/system_<id>.csv`
-- `outputs/systems_metadata.csv` for system definitions
+### 3) Check outputs
 
-## Output details
-- `outputs/system_<id>.csv` columns:
-  - `time`: UTC timestamps
-  - `dc_power_w`: DC power in watts
-  - `ac_power_w`: AC power in watts (after inverter clipping)
-  - `shading_factor`: multiplicative shading applied to POA irradiance
-- `outputs/systems_metadata.csv` columns:
-  - `system_id`, `system_type`, `kwp`, `tilt`, `azimuth`, `dc_ac_ratio`,
-    `losses`, `shading_model`, `shading_profiles`, `horizon_deg`, `strength`,
-    `softness_deg`, `sectors`
+- `outputs/system_001.csv`, `outputs/system_002.csv`, ...
+- `outputs/systems_metadata.csv`
 
-## System ranges and orientations
-- kWp range: 3–15 kWp (randomized per system).
-- Tilt range: 10–45 degrees.
-- Azimuth ranges (degrees):
-  - South-facing: centered around 180°, clipped to 135–225°.
-  - East-facing: centered around 90°, clipped to 70–110°.
-  - West-facing: centered around 270°, clipped to 250–290°.
-- Combined orientation:
-  - East–West systems are modeled as two sub-arrays (90° and 270°) with the
-    total kWp split evenly.
+---
 
-## Shading behavior
-- Shading is a geometric approximation of horizon obstruction using solar azimuth
-  and elevation, not fixed clock times.
-- Each system is assigned a `shading_model` of `none` or `horizon_obstruction`.
-- For `horizon_obstruction`, sectors define azimuth ranges and a horizon cutoff
-  elevation. Shading strength ramps smoothly around the horizon.
-- The model is deterministic and does not vary by month; it depends only on the
-  sun position.
+## Input files
 
-Example profile (east obstruction):
+### Weather CSV (strict format)
+
+The weather file must be semicolon-separated and must use exactly this header:
+
+```text
+time;ghi;dhi;t_luft;v_wind
 ```
-shading_model: horizon_obstruction
-sectors: [(60, 150)]
-horizon_deg: 12
-strength: 0.6
-softness_deg: 4
+
+Rules:
+- Separator: `;`
+- Time format: `YYYY-MM-DD HH:MM:SS±HH:MM` (offset required)
+- Resolution: continuous 15-minute steps
+- Required columns:
+  - `time`: timestamp with UTC offset
+  - `ghi`: global horizontal irradiance
+  - `dhi`: diffuse horizontal irradiance
+  - `t_luft`: air temperature
+  - `v_wind`: wind speed
+
+Example:
+
+```csv
+time;ghi;dhi;t_luft;v_wind
+2025-01-01 00:00:00+01:00;0;0;1.5;6.89
+2025-01-01 00:15:00+01:00;0;0;1.45;7.45
+2025-01-01 00:30:00+01:00;0;0;1.43;7.05
 ```
-Interpretation: when the sun is in the east sector and below ~12° elevation,
-the irradiance is reduced smoothly with strength 0.6.
+
+### Site metadata JSON
+
+Required keys:
+
+```json
+{
+  "lat": 52.5,
+  "lon": 13.4,
+  "tz": "Europe/Berlin"
+}
+```
+
+Optional: `altitude`
+
+---
+
+## Output files
+
+### 1) Per-system power profile (`system_<id>.csv`)
+
+Columns:
+- `time`: timestamp
+- `dc_power_w`: simulated DC power (W)
+- `ac_power_w`: simulated AC power (W)
+
+### 2) Scenario metadata (`systems_metadata.csv`)
+
+Columns:
+- `system_id`
+- `system_type` (`south`, `east`, `west`, `east-west`)
+- `kwp`
+- `tilt`
+- `azimuth` (`90/270` for east-west split systems)
+- `dc_ac_ratio`
+- `losses`
+
+---
+
+## Concept explained for non-programmers
+
+Think of this tool as a **virtual PV lab**.
+
+- The weather file is the “outside world”.
+- A scenario is a “virtual roof installation”.
+- The physical model calculates how much sunlight reaches the modules and how much electrical power comes out.
+
+### Why random scenarios?
+
+Real neighborhoods contain many different roof geometries and system sizes.
+The generator samples realistic ranges so your dataset contains natural diversity.
+
+### What is modeled physically?
+
+- **Sun position**: where the sun is in the sky at each timestamp.
+- **Irradiance transposition**: converts horizontal sunlight to tilted module sunlight.
+- **Cell temperature**: warmer modules produce less power.
+- **DC output**: calculated with PVWatts DC model.
+- **AC output**: inverter efficiency and clipping with PVWatts inverter model.
+
+### East-west systems
+
+East-west is represented as two sub-arrays:
+- one facing east (90°),
+- one facing west (270°),
+- each gets half of total kWp,
+- DC outputs are summed and converted to AC.
+
+### Losses
+
+The `losses` factor is a simple aggregate percentage for typical effects such as cable losses, mismatch, and soiling.
+
+---
+
+## Code structure (architecture)
+
+- `scripts/generate_synthetic_pv.py`
+  - Command line entry point.
+- `src/pv_synth/io.py`
+  - Input loading and strict validation.
+- `src/pv_synth/scenarios.py`
+  - Random system scenario generation.
+- `src/pv_synth/pv_models.py`
+  - Physical simulation with pvlib.
+- `src/pv_synth/generate.py`
+  - End-to-end orchestration and CSV writing.
+
+---
+
+## Reproducibility
+
+Use `--seed` to get deterministic random scenarios.
+Same input + same seed = same synthetic systems.
+
+---
+
+## Notes and limitations
+
+- The tool does not create synthetic weather; it uses your measured weather input.
+- The model is simplified (PVWatts-based) and intended for realistic synthetic datasets, not detailed plant engineering.
+- Synthetic shading is intentionally disabled/removed.
+
+---
+
+## Run tests
+
+```bash
+pytest
+```
+

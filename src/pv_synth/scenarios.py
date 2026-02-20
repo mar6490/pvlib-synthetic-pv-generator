@@ -1,8 +1,12 @@
-"""Scenario generation for synthetic systems.
+"""Scenario generation for synthetic photovoltaic (PV) systems.
 
-The scenarios represent different residential PV configurations typical for
-Germany/Austria/Switzerland (DACH) with variability in size, tilt, azimuth,
-losses, and DC/AC ratio.
+This module creates random-but-realistic PV system configurations.
+
+Design goal (plain language):
+- We want many different PV systems so downstream analysis has variety.
+- We keep ranges realistic for residential systems in DACH countries.
+- We intentionally guarantee orientation diversity, so each run contains
+  south, east, west, and east-west examples (as far as n_systems allows).
 """
 
 from __future__ import annotations
@@ -15,18 +19,26 @@ import numpy as np
 from pv_synth.pv_models import SystemConfig
 
 
-def _sector_for_orientation(system_type: str) -> list[tuple[float, float]]:
-    if system_type == "south":
-        return [(140.0, 220.0)]
-    if system_type == "east":
-        return [(60.0, 150.0)]
-    if system_type == "west":
-        return [(210.0, 300.0)]
-    return [(140.0, 220.0)]
+# Orientation set we want to cover in generated data.
+# Keeping this as a constant makes the intent explicit and easy to change.
+BASE_TYPES = ["east-west", "south", "east", "west"]
 
 
 def _sample_azimuth(system_type: str, rng: np.random.Generator) -> float | None:
-    """Sample an azimuth appropriate for each system orientation."""
+    """Sample a realistic azimuth angle (compass direction) for one system.
+
+    Why this helper exists:
+    - Different roof orientations have different plausible azimuth ranges.
+    - Encapsulating this logic keeps ``generate_scenarios`` simple.
+
+    Notes for beginners:
+    - Azimuth in this project follows pvlib convention:
+      * 180° = south
+      * 90° = east
+      * 270° = west
+    - East-west systems are modeled as two separate sub-arrays (fixed at
+      90° and 270°), so they do not have one single azimuth value.
+    """
     if system_type == "south":
         return float(np.clip(rng.normal(180, 15), 135, 225))
     if system_type == "east":
@@ -39,85 +51,30 @@ def _sample_azimuth(system_type: str, rng: np.random.Generator) -> float | None:
 
 
 def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemConfig]:
-    """Generate randomized system scenarios with required orientation coverage."""
+    """Create ``n_systems`` randomized PV configurations.
+
+    The generated systems do *not* include any synthetic shading model.
+    All scenarios represent unshaded systems with standard aggregate losses.
+    """
     rng = np.random.default_rng(seed)
-    # Ensure at least one east-west system, then fill the rest with single-tilt types.
-    base_types = ["east-west", "south", "east", "west"]
-    types = base_types[: min(n_systems, len(base_types))]
+
+    # Step 1: build an orientation list with guaranteed coverage.
+    # Example: for n=3 -> [east-west, south, east]
+    #          for n=8 -> first 4 fixed, then random picks from single-tilt types.
+    types = BASE_TYPES[: min(n_systems, len(BASE_TYPES))]
     while len(types) < n_systems:
-        types.append(rng.choice(base_types[1:]))
+        types.append(rng.choice(BASE_TYPES[1:]))
 
     scenarios: List[SystemConfig] = []
+
+    # Step 2: sample physical/electrical parameters for each system.
     for idx, system_type in enumerate(types, start=1):
-        # Draw values from realistic residential ranges.
         kwp = float(rng.uniform(3, 15))
         tilt = float(rng.uniform(10, 45))
         azimuth = _sample_azimuth(system_type, rng)
         dc_ac_ratio = float(rng.uniform(1.05, 1.25))
         losses = float(rng.uniform(0, 0.2))
-        shading_model = rng.choice(["none", "horizon_obstruction"])
-        horizon_deg = float(rng.uniform(5, 25))
-        strength = float(rng.uniform(0.2, 0.8))
-        softness_deg = float(rng.uniform(2, 8))
-        shading_profiles: dict[str, dict] = {}
 
-        if shading_model == "horizon_obstruction":
-            if system_type == "east-west":
-                variant = rng.choice(["east_obstruction", "west_obstruction", "south_obstruction"])
-                if variant == "east_obstruction":
-                    shading_profiles = {
-                        "east": {
-                            "sectors": [(60.0, 150.0)],
-                            "horizon_deg": horizon_deg,
-                            "strength": strength,
-                            "softness_deg": softness_deg,
-                        },
-                        "west": {
-                            "sectors": [(210.0, 300.0)],
-                            "horizon_deg": horizon_deg,
-                            "strength": 0.05,
-                            "softness_deg": softness_deg,
-                        },
-                    }
-                elif variant == "west_obstruction":
-                    shading_profiles = {
-                        "east": {
-                            "sectors": [(60.0, 150.0)],
-                            "horizon_deg": horizon_deg,
-                            "strength": 0.05,
-                            "softness_deg": softness_deg,
-                        },
-                        "west": {
-                            "sectors": [(210.0, 300.0)],
-                            "horizon_deg": horizon_deg,
-                            "strength": strength,
-                            "softness_deg": softness_deg,
-                        },
-                    }
-                else:
-                    shading_profiles = {
-                        "east": {
-                            "sectors": [(140.0, 220.0)],
-                            "horizon_deg": horizon_deg,
-                            "strength": strength,
-                            "softness_deg": softness_deg,
-                        },
-                        "west": {
-                            "sectors": [(140.0, 220.0)],
-                            "horizon_deg": horizon_deg,
-                            "strength": strength,
-                            "softness_deg": softness_deg,
-                        },
-                    }
-            else:
-                shading_profiles = {
-                    "single": {
-                        "sectors": _sector_for_orientation(system_type),
-                        "horizon_deg": horizon_deg,
-                        "strength": strength,
-                        "softness_deg": softness_deg,
-                    }
-                }
         scenarios.append(
             SystemConfig(
                 system_id=idx,
@@ -127,8 +84,6 @@ def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemCo
                 azimuth=azimuth,
                 dc_ac_ratio=dc_ac_ratio,
                 losses=losses,
-                shading_model=shading_model,
-                shading_profiles=shading_profiles,
             )
         )
 
@@ -136,10 +91,11 @@ def generate_scenarios(n_systems: int, seed: int | None = None) -> List[SystemCo
 
 
 def scenarios_to_metadata(scenarios: List[SystemConfig]) -> list[dict]:
-    """Convert scenario objects to a list of metadata dicts for CSV output."""
+    """Convert scenario objects into row dictionaries for CSV export."""
     metadata = []
     for config in scenarios:
         row = asdict(config)
+        # East-west systems have two fixed azimuths instead of one numeric value.
         row["azimuth"] = "90/270" if config.system_type == "east-west" else config.azimuth
         metadata.append(row)
     return metadata
