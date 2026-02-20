@@ -20,6 +20,10 @@ def generate_systems(
     system_type: str = "mixed",
     mix_weights: dict[str, float] | None = None,
     n_by_type: dict[str, int] | None = None,
+    ew_azimuth_mode: str = "fixed_cardinal",
+    roof_type: str = "mixed",
+    ew_azimuth_jitter_deg: float | None = None,
+    ew_tilt_range_deg: tuple[float, float] | None = None,
 ) -> None:
     """Generate synthetic PV systems and write outputs to disk."""
     meta = load_site_meta(meta_path)
@@ -30,6 +34,10 @@ def generate_systems(
         system_type=system_type,
         mix_weights=mix_weights,
         n_by_type=n_by_type,
+        ew_azimuth_mode=ew_azimuth_mode,
+        roof_type=roof_type,
+        ew_azimuth_jitter_deg=ew_azimuth_jitter_deg,
+        ew_tilt_range_deg=ew_tilt_range_deg,
     )
 
     output_path = Path(out_dir)
@@ -46,14 +54,22 @@ def generate_systems(
                 "system_id": config.system_id,
                 "system_type": config.system_type,
                 "plane_type": config.plane_type,
+                "roof_type": config.roof_type,
+                "ew_azimuth_mode": config.ew_azimuth_mode,
+                "lat": meta["lat"],
+                "lon": meta["lon"],
                 "kwp_total": config.kwp_total,
                 "kwp": config.kwp_total,
                 "kwp_east": config.kwp_east,
                 "kwp_west": config.kwp_west,
                 "tilt": config.tilt,
-                "azimuth": "90/270" if config.system_type == "east-west" else config.azimuth,
-                "azimuth_east": 90.0 if config.system_type == "east-west" else None,
-                "azimuth_west": 270.0 if config.system_type == "east-west" else None,
+                "azimuth": (
+                    f"{config.azimuth_east:.6f}/{config.azimuth_west:.6f}"
+                    if config.system_type == "east-west"
+                    else config.azimuth
+                ),
+                "azimuth_east": config.azimuth_east,
+                "azimuth_west": config.azimuth_west,
                 "dc_ac_ratio": config.dc_ac_ratio,
                 "losses": config.losses,
             }

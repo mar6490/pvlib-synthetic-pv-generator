@@ -15,11 +15,15 @@ class SystemConfig:
     system_id: int
     system_type: str
     plane_type: str | None
+    roof_type: str | None
+    ew_azimuth_mode: str | None
     kwp_total: float
     kwp_east: float | None
     kwp_west: float | None
     tilt: float
     azimuth: float | None
+    azimuth_east: float | None
+    azimuth_west: float | None
     dc_ac_ratio: float
     losses: float
 
@@ -99,6 +103,9 @@ def simulate_system(
     dni = _dni_from_ghi_dhi(weather["ghi"], weather["dhi"], solar_position["zenith"])
 
     if config.system_type == "east-west":
+        if config.azimuth_east is None or config.azimuth_west is None:
+            raise ValueError("East-west systems require azimuth_east and azimuth_west.")
+
         kwp_east = config.kwp_east if config.kwp_east is not None else config.kwp_total / 2
         kwp_west = config.kwp_west if config.kwp_west is not None else config.kwp_total / 2
 
@@ -108,7 +115,7 @@ def simulate_system(
             weather["dhi"],
             dni,
             tilt=config.tilt,
-            azimuth=90.0,
+            azimuth=config.azimuth_east,
         )
         poa_west = _poa_irradiance(
             solar_position,
@@ -116,7 +123,7 @@ def simulate_system(
             weather["dhi"],
             dni,
             tilt=config.tilt,
-            azimuth=270.0,
+            azimuth=config.azimuth_west,
         )
 
         dc_east = _dc_power(poa_east, weather["t_luft"], weather["v_wind"], kwp_east)

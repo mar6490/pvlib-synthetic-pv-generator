@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import List
 
 import numpy as np
@@ -11,6 +10,8 @@ from pv_synth.pv_models import SystemConfig
 
 ALLOWED_SYSTEM_TYPES = ("single", "east-west")
 DEFAULT_MIX_WEIGHTS = {"single": 0.7, "east-west": 0.3}
+ALLOWED_EW_AZIMUTH_MODES = ("fixed_cardinal", "jittered_180")
+ALLOWED_ROOF_TYPES = ("flat", "pitched", "mixed")
 
 
 def parse_mix_weights(raw: str | None) -> dict[str, float]:
@@ -79,6 +80,29 @@ def parse_n_by_type(raw: str | None) -> dict[str, int] | None:
     return counts
 
 
+def parse_tilt_range(raw: str | None) -> tuple[float, float] | None:
+    """Parse optional east-west tilt range override from ``a,b`` format."""
+    if raw is None:
+        return None
+
+    parts = [item.strip() for item in raw.split(",")]
+    if len(parts) != 2:
+        raise ValueError("Invalid --ew-tilt-range-deg format. Use 'min,max'.")
+
+    try:
+        low = float(parts[0])
+        high = float(parts[1])
+    except ValueError as exc:
+        raise ValueError("Invalid --ew-tilt-range-deg values. Use numeric min,max.") from exc
+
+    if low < 0 or high < 0:
+        raise ValueError("--ew-tilt-range-deg values must be non-negative.")
+    if low >= high:
+        raise ValueError("--ew-tilt-range-deg requires min < max.")
+
+    return low, high
+
+
 def _sample_single_plane_type(rng: np.random.Generator) -> str:
     return str(rng.choice(["south", "east", "west"]))
 
@@ -120,14 +144,65 @@ def _build_system_types(
     raise ValueError("--system-type must be one of: single, east-west, mixed.")
 
 
+def _sample_ew_roof_type(selected_roof_type: str, rng: np.random.Generator) -> str:
+    if selected_roof_type == "mixed":
+        return str(rng.choice(["flat", "pitched"], p=[0.5, 0.5]))
+    return selected_roof_type
+
+
+def _sample_ew_tilt(
+    roof_type: str,
+    rng: np.random.Generator,
+    ew_tilt_range_deg: tuple[float, float] | None,
+) -> float:
+    if ew_tilt_range_deg is not None:
+        return float(rng.uniform(ew_tilt_range_deg[0], ew_tilt_range_deg[1]))
+    if roof_type == "flat":
+        return float(rng.uniform(5, 20))
+    return float(rng.uniform(20, 55))
+
+
+def _sample_ew_azimuths(
+    roof_type: str,
+    mode: str,
+    rng: np.random.Generator,
+    ew_azimuth_jitter_deg: float | None,
+) -> tuple[float, float]:
+    if mode == "fixed_cardinal":
+        azimuth_east = 90.0
+    else:
+        if ew_azimuth_jitter_deg is not None:
+            jitter = ew_azimuth_jitter_deg
+        elif roof_type == "flat":
+            jitter = 15.0
+        else:
+            jitter = 30.0
+        delta = float(rng.uniform(-jitter, jitter))
+        azimuth_east = 90.0 + delta
+
+    azimuth_west = (azimuth_east + 180.0) % 360.0
+    return azimuth_east, azimuth_west
+
+
 def generate_scenarios(
     n_systems: int,
     seed: int | None = None,
     system_type: str = "mixed",
     mix_weights: dict[str, float] | None = None,
     n_by_type: dict[str, int] | None = None,
+    ew_azimuth_mode: str = "fixed_cardinal",
+    roof_type: str = "mixed",
+    ew_azimuth_jitter_deg: float | None = None,
+    ew_tilt_range_deg: tuple[float, float] | None = None,
 ) -> List[SystemConfig]:
     """Create randomized PV configurations with controllable system-type composition."""
+    if ew_azimuth_mode not in ALLOWED_EW_AZIMUTH_MODES:
+        raise ValueError("--ew-azimuth-mode must be one of: fixed_cardinal, jittered_180.")
+    if roof_type not in ALLOWED_ROOF_TYPES:
+        raise ValueError("--roof-type must be one of: flat, pitched, mixed.")
+    if ew_azimuth_jitter_deg is not None and ew_azimuth_jitter_deg < 0:
+        raise ValueError("--ew-azimuth-jitter-deg must be >= 0.")
+
     rng = np.random.default_rng(seed)
     mix = dict(DEFAULT_MIX_WEIGHTS if mix_weights is None else mix_weights)
     types = _build_system_types(n_systems, rng, system_type, mix, n_by_type)
@@ -135,11 +210,18 @@ def generate_scenarios(
     scenarios: List[SystemConfig] = []
     for idx, scenario_type in enumerate(types, start=1):
         kwp_total = float(rng.uniform(3, 15))
-        tilt = float(rng.uniform(10, 45))
         dc_ac_ratio = float(rng.uniform(1.05, 1.25))
         losses = float(rng.uniform(0, 0.2))
 
         if scenario_type == "east-west":
+            sampled_roof_type = _sample_ew_roof_type(roof_type, rng)
+            sampled_tilt = _sample_ew_tilt(sampled_roof_type, rng, ew_tilt_range_deg)
+            azimuth_east, azimuth_west = _sample_ew_azimuths(
+                sampled_roof_type,
+                ew_azimuth_mode,
+                rng,
+                ew_azimuth_jitter_deg,
+            )
             kwp_east = kwp_total / 2
             kwp_west = kwp_total / 2
             scenarios.append(
@@ -147,11 +229,15 @@ def generate_scenarios(
                     system_id=idx,
                     system_type="east-west",
                     plane_type=None,
+                    roof_type=sampled_roof_type,
+                    ew_azimuth_mode=ew_azimuth_mode,
                     kwp_total=kwp_total,
                     kwp_east=kwp_east,
                     kwp_west=kwp_west,
-                    tilt=tilt,
+                    tilt=sampled_tilt,
                     azimuth=None,
+                    azimuth_east=azimuth_east,
+                    azimuth_west=azimuth_west,
                     dc_ac_ratio=dc_ac_ratio,
                     losses=losses,
                 )
@@ -163,28 +249,18 @@ def generate_scenarios(
                     system_id=idx,
                     system_type="single",
                     plane_type=plane_type,
+                    roof_type=None,
+                    ew_azimuth_mode=None,
                     kwp_total=kwp_total,
                     kwp_east=None,
                     kwp_west=None,
-                    tilt=tilt,
+                    tilt=float(rng.uniform(10, 45)),
                     azimuth=_sample_azimuth(plane_type, rng),
+                    azimuth_east=None,
+                    azimuth_west=None,
                     dc_ac_ratio=dc_ac_ratio,
                     losses=losses,
                 )
             )
 
     return scenarios
-
-
-def scenarios_to_metadata(scenarios: List[SystemConfig]) -> list[dict]:
-    """Convert scenario objects into row dictionaries for CSV export."""
-    metadata = []
-    for config in scenarios:
-        row = asdict(config)
-        # East-west systems have two fixed azimuths instead of one numeric value.
-        row["azimuth"] = "90/270" if config.system_type == "east-west" else config.azimuth
-        row["azimuth_east"] = 90.0 if config.system_type == "east-west" else None
-        row["azimuth_west"] = 270.0 if config.system_type == "east-west" else None
-        row["kwp"] = config.kwp_total
-        metadata.append(row)
-    return metadata

@@ -24,13 +24,12 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
-## New system-type controls
+## System-type controls
 
 ### `--system-type`
-Controls which architecture is generated:
 - `single`: only single-plane systems
 - `east-west`: only two-plane east-west systems
-- `mixed`: random mix of single + east-west (default)
+- `mixed`: random mix (default)
 
 ### `--mix-weights`
 Used in `mixed` mode. Format:
@@ -40,25 +39,40 @@ single=0.7,east-west=0.3
 ```
 
 Rules:
-- keys only: `single`, `east-west`
-- values must be non-negative
+- keys only `single`, `east-west`
+- non-negative values
 - sum must equal 1.0
 
-Default: `single=0.7,east-west=0.3`
-
 ### `--n-by-type`
-Optional explicit counts, overrides `--n-systems` and `--mix-weights`.
-
-Format:
+Optional explicit counts. Overrides `--n-systems` and `--mix-weights`.
 
 ```text
 east-west=20,single=10
 ```
 
-Rules:
-- keys only: `single`, `east-west`
-- values must be integers >= 0
-- total must be > 0
+## East-west parametrization (new)
+
+### `--ew-azimuth-mode`
+- `fixed_cardinal` (default, backwards compatible): east/west azimuths fixed at 90/270
+- `jittered_180` (realistic): east azimuth is jittered around 90°, west is always exactly 180° apart
+
+### `--roof-type`
+- `flat`
+- `pitched`
+- `mixed` (default; per east-west system sampled 50/50 flat vs pitched)
+
+### Optional east-west overrides
+- `--ew-azimuth-jitter-deg X`
+  - overrides default jitter width in `jittered_180` mode (`delta ~ Uniform(-X, +X)`)
+- `--ew-tilt-range-deg "a,b"`
+  - overrides east-west tilt sampling (`tilt ~ Uniform(a,b)`)
+
+Default east-west behavior without overrides:
+- `fixed_cardinal`: 90/270
+- `jittered_180` + roof type `flat`: jitter ±15°, tilt 5..20°
+- `jittered_180` + roof type `pitched`: jitter ±30°, tilt 20..55°
+
+> These east-west options are only relevant for east-west systems.
 
 ## Examples
 
@@ -110,6 +124,20 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
+Realistic east-west parametrization:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_ew_real \
+  --n-systems 20 \
+  --system-type east-west \
+  --ew-azimuth-mode jittered_180 \
+  --roof-type mixed \
+  --seed 42
+```
+
 ## Input weather format
 
 Strict CSV format:
@@ -128,20 +156,23 @@ Per system file: `system_<id>.csv`
 Metadata file: `systems_metadata.csv`
 - `system_id`
 - `system_type` (`single` or `east-west`)
-- `plane_type` (`south`/`east`/`west` for single; empty for east-west)
+- `plane_type` (`south`/`east`/`west` for single)
+- `roof_type` (for east-west)
+- `ew_azimuth_mode` (for east-west)
+- `lat`, `lon` (included for every system)
 - `kwp_total`
 - `kwp` (alias to `kwp_total`)
-- `kwp_east`, `kwp_west` (filled for east-west)
+- `kwp_east`, `kwp_west` (east-west)
 - `tilt`
-- `azimuth` (single scalar or `90/270` for east-west)
-- `azimuth_east`, `azimuth_west` (filled for east-west)
+- `azimuth`
+- `azimuth_east`, `azimuth_west` (east-west)
 - `dc_ac_ratio`
 - `losses`
 
 ## Reproducibility
 
 Use `--seed` for deterministic generation.
-Same input + same seed + same CLI options => same type distribution and parameter samples.
+Same input + same seed + same CLI options => same type distribution and sampled parameters.
 
 ## Tests
 
