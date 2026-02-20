@@ -1,3 +1,5 @@
+import re
+import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +13,8 @@ from pv_synth.quicklook import (
     plot_quicklooks_for_dir,
     plot_system_quicklook,
 )
+
+TIMESTAMP_PATTERN = re.compile(r"^quicklooks_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 
 
 def _write_system_csv(path: Path, periods: int = 96 * 10) -> None:
@@ -71,3 +75,47 @@ def test_plot_quicklooks_for_dir_smoke(tmp_path: Path) -> None:
     assert stats["plotted"] == 1
     assert stats["errors"] == 0
     assert (out_dir / "system_001_quicklook.png").exists()
+
+
+def test_quicklook_standalone_default_creates_timestamped_dir(tmp_path: Path) -> None:
+    in_dir = tmp_path / "run_1"
+    in_dir.mkdir(parents=True)
+    _write_system_csv(in_dir / "system_001.csv")
+
+    subprocess.run(
+        [
+            "python",
+            "scripts/quicklook_systems.py",
+            "--in-dir",
+            str(in_dir),
+        ],
+        check=True,
+    )
+
+    ql_dirs = [path for path in in_dir.iterdir() if path.is_dir() and TIMESTAMP_PATTERN.fullmatch(path.name)]
+    assert len(ql_dirs) == 1
+    assert (ql_dirs[0] / "system_001_quicklook.png").exists()
+
+
+def test_quicklook_standalone_respects_explicit_out_dir(tmp_path: Path) -> None:
+    in_dir = tmp_path / "run_2"
+    in_dir.mkdir(parents=True)
+    _write_system_csv(in_dir / "system_001.csv")
+
+    explicit_out = in_dir / "my_quicklooks"
+    subprocess.run(
+        [
+            "python",
+            "scripts/quicklook_systems.py",
+            "--in-dir",
+            str(in_dir),
+            "--out-dir",
+            str(explicit_out),
+        ],
+        check=True,
+    )
+
+    assert explicit_out.exists()
+    assert (explicit_out / "system_001_quicklook.png").exists()
+    nested = [path for path in explicit_out.iterdir() if path.is_dir() and TIMESTAMP_PATTERN.fullmatch(path.name)]
+    assert not nested

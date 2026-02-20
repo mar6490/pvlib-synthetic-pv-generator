@@ -2,13 +2,35 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+import re
 
 import pandas as pd
 
 from pv_synth.io import load_site_meta, load_weather
 from pv_synth.pv_models import simulate_system
 from pv_synth.scenarios import generate_scenarios
+
+TIMESTAMP_DIR_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+
+
+def create_run_directory(base_out_dir: Path) -> Path:
+    """Create and return the run directory using timestamped structure.
+
+    Rules:
+    - If ``base_out_dir`` already looks like a timestamped run directory,
+      use it directly.
+    - Otherwise create ``base_out_dir/<timestamp>``.
+    """
+    if TIMESTAMP_DIR_PATTERN.fullmatch(base_out_dir.name):
+        run_dir = base_out_dir
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_dir = base_out_dir / timestamp
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
 
 
 def generate_systems(
@@ -24,8 +46,11 @@ def generate_systems(
     roof_type: str = "mixed",
     ew_azimuth_jitter_deg: float | None = None,
     ew_tilt_range_deg: tuple[float, float] | None = None,
-) -> None:
-    """Generate synthetic PV systems and write outputs to disk."""
+) -> Path:
+    """Generate synthetic PV systems and write outputs to disk.
+
+    Returns the resolved run directory path where files were written.
+    """
     meta = load_site_meta(meta_path)
     weather = load_weather(weather_path, meta["tz"])
     scenarios = generate_scenarios(
@@ -40,8 +65,7 @@ def generate_systems(
         ew_tilt_range_deg=ew_tilt_range_deg,
     )
 
-    output_path = Path(out_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_path = create_run_directory(Path(out_dir))
 
     metadata_rows = []
     for config in scenarios:
@@ -77,3 +101,4 @@ def generate_systems(
 
     metadata_df = pd.DataFrame(metadata_rows)
     metadata_df.to_csv(output_path / "systems_metadata.csv", index=False)
+    return output_path

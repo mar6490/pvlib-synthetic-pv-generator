@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import glob
 import re
 import sys
@@ -23,6 +24,11 @@ def _system_sort_key(path: Path) -> tuple[int, str]:
     if match:
         return int(match.group(1)), path.name
     return 10**9, path.name
+
+
+def _timestamped_quicklook_dir(parent: Path) -> Path:
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return parent / f"quicklooks_{ts}"
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,7 +55,7 @@ def _run_glob_mode(args: argparse.Namespace) -> dict[str, int]:
     if args.max_systems is not None:
         csv_paths = csv_paths[: args.max_systems]
 
-    out_dir = Path(args.out_dir) if args.out_dir else Path("quicklooks")
+    out_dir = Path(args.out_dir) if args.out_dir else _timestamped_quicklook_dir(Path("."))
     stats = {"found": len(csv_paths), "plotted": 0, "skipped": 0, "errors": 0}
 
     for csv_path in csv_paths:
@@ -77,7 +83,7 @@ def main() -> None:
 
     if args.in_dir:
         in_dir = Path(args.in_dir)
-        out_dir = Path(args.out_dir) if args.out_dir else in_dir / "quicklooks"
+        out_dir = Path(args.out_dir) if args.out_dir else _timestamped_quicklook_dir(in_dir)
         stats = plot_quicklooks_for_dir(
             in_dir=in_dir,
             out_dir=out_dir,

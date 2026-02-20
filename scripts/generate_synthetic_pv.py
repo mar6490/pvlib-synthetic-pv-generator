@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--quicklook-dir",
         default=None,
-        help="Optional directory for quicklook images (defaults to <out-dir>/quicklooks)",
+        help="Optional directory for quicklook images (defaults to <run-dir>/quicklooks)",
     )
 
     args = parser.parse_args()
@@ -94,7 +94,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Entry point used when running the script directly."""
     args = parse_args()
-    generate_systems(
+    run_dir = generate_systems(
         weather_path=args.weather,
         meta_path=args.meta,
         out_dir=args.out_dir,
@@ -110,9 +110,9 @@ def main() -> None:
     )
 
     if args.quicklook:
-        ql_dir = Path(args.quicklook_dir) if args.quicklook_dir else Path(args.out_dir) / "quicklooks"
+        ql_dir = Path(args.quicklook_dir) if args.quicklook_dir else run_dir / "quicklooks"
         stats = plot_quicklooks_for_dir(
-            in_dir=Path(args.out_dir),
+            in_dir=run_dir,
             out_dir=ql_dir,
             normalize=True,
             overwrite=False,

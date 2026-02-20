@@ -24,6 +24,17 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
+
+## Timestamped output structure
+
+Generation now writes into a timestamped run folder.
+
+Example:
+- Input `--out-dir outputs`
+- Effective run folder: `outputs/YYYY-MM-DD_HH-MM-SS/`
+
+If `--out-dir` already points to a timestamped run directory (for example `outputs/2026-02-20_16-12-33`), no extra nested timestamp folder is created.
+
 ## System-type controls
 
 ### `--system-type`
@@ -175,8 +186,15 @@ Metadata file: `systems_metadata.csv`
 You can create AC-only quicklook figures for existing generated systems (independent from generation):
 
 ```bash
-python scripts/quicklook_systems.py --in-dir outputs --out-dir outputs/quicklooks
+python scripts/quicklook_systems.py --in-dir outputs/2026-02-20_16-45-12
 ```
+
+
+Default standalone quicklook output for `--in-dir` is also timestamped:
+- `--in-dir outputs/2026-02-20_16-45-12`
+- output: `outputs/2026-02-20_16-45-12/quicklooks_YYYY-MM-DD_HH-MM-SS/`
+
+If you pass `--out-dir`, it is used directly (created if needed) without adding another timestamp subfolder.
 
 Or via glob:
 
@@ -193,9 +211,10 @@ Optional convenience hook during generation:
 
 ```bash
 python scripts/generate_synthetic_pv.py ... --quicklook
+# quicklooks will be written to <run_dir>/quicklooks/
 ```
 
-Use `--quicklook-dir` to override the default output folder (`<out-dir>/quicklooks`).
+Use `--quicklook-dir` to override the default output folder (`<run-dir>/quicklooks`).
 
 ## Reproducibility
 

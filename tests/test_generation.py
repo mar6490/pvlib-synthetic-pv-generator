@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -7,6 +8,8 @@ import pandas as pd
 
 from pv_synth.generate import generate_systems
 from pv_synth.io import load_weather
+
+TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 
 
 def _write_weather_csv(path: Path) -> None:
@@ -50,22 +53,45 @@ def test_generation_outputs_match_input_length(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs"
 
-    generate_systems(weather_path, meta_path, out_dir, n_systems=3, seed=1)
+    run_dir = generate_systems(weather_path, meta_path, out_dir, n_systems=3, seed=1)
 
-    first_system = out_dir / "system_001.csv"
+    first_system = run_dir / "system_001.csv"
     assert first_system.exists()
     system_df = pd.read_csv(first_system)
     assert len(system_df) == 4
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
     assert len(metadata_df) == 3
+
+
+def test_generator_creates_timestamp_subdir_when_base_given(tmp_path: Path) -> None:
+    weather_path, meta_path = _prepare_inputs(tmp_path)
+    base_out_dir = tmp_path / "outputs"
+
+    run_dir = generate_systems(weather_path, meta_path, base_out_dir, n_systems=1, seed=2)
+
+    assert run_dir.parent == base_out_dir
+    assert TIMESTAMP_PATTERN.fullmatch(run_dir.name)
+    assert (run_dir / "systems_metadata.csv").exists()
+
+
+def test_generator_uses_timestamped_out_dir_directly(tmp_path: Path) -> None:
+    weather_path, meta_path = _prepare_inputs(tmp_path)
+    explicit_run_dir = tmp_path / "outputs" / "2026-02-20_16-12-33"
+
+    run_dir = generate_systems(weather_path, meta_path, explicit_run_dir, n_systems=1, seed=3)
+
+    assert run_dir == explicit_run_dir
+    assert (run_dir / "systems_metadata.csv").exists()
+    nested = [path for path in run_dir.iterdir() if path.is_dir() and TIMESTAMP_PATTERN.fullmatch(path.name)]
+    assert not nested
 
 
 def test_system_type_east_west_only_fixed_cardinal(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs_ew"
 
-    generate_systems(
+    run_dir = generate_systems(
         weather_path,
         meta_path,
         out_dir,
@@ -75,7 +101,7 @@ def test_system_type_east_west_only_fixed_cardinal(tmp_path: Path) -> None:
         ew_azimuth_mode="fixed_cardinal",
     )
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
 
     assert (metadata_df["system_type"] == "east-west").all()
     assert ((metadata_df["kwp_east"] - metadata_df["kwp_total"] / 2).abs() < 1e-9).all()
@@ -88,7 +114,7 @@ def test_system_type_single_only(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs_single"
 
-    generate_systems(
+    run_dir = generate_systems(
         weather_path,
         meta_path,
         out_dir,
@@ -100,7 +126,7 @@ def test_system_type_single_only(tmp_path: Path) -> None:
         ew_azimuth_jitter_deg=50,
     )
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
 
     assert (metadata_df["system_type"] == "single").all()
     assert metadata_df["kwp_east"].isna().all()
@@ -116,7 +142,7 @@ def test_mixed_with_all_east_west_weight(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs_mix"
 
-    generate_systems(
+    run_dir = generate_systems(
         weather_path,
         meta_path,
         out_dir,
@@ -126,7 +152,7 @@ def test_mixed_with_all_east_west_weight(tmp_path: Path) -> None:
         mix_weights={"single": 0.0, "east-west": 1.0},
     )
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
     assert (metadata_df["system_type"] == "east-west").all()
 
 
@@ -143,11 +169,11 @@ def test_reproducibility_same_seed_same_metadata(tmp_path: Path) -> None:
         "ew_azimuth_mode": "jittered_180",
         "roof_type": "mixed",
     }
-    generate_systems(weather_path, meta_path, out_a, **kwargs)
-    generate_systems(weather_path, meta_path, out_b, **kwargs)
+    run_a = generate_systems(weather_path, meta_path, out_a, **kwargs)
+    run_b = generate_systems(weather_path, meta_path, out_b, **kwargs)
 
-    meta_a = pd.read_csv(out_a / "systems_metadata.csv")
-    meta_b = pd.read_csv(out_b / "systems_metadata.csv")
+    meta_a = pd.read_csv(run_a / "systems_metadata.csv")
+    meta_b = pd.read_csv(run_b / "systems_metadata.csv")
 
     pd.testing.assert_frame_equal(meta_a, meta_b)
 
@@ -156,7 +182,7 @@ def test_n_by_type_overrides_n_systems(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs_counts"
 
-    generate_systems(
+    run_dir = generate_systems(
         weather_path,
         meta_path,
         out_dir,
@@ -167,7 +193,7 @@ def test_n_by_type_overrides_n_systems(tmp_path: Path) -> None:
         n_by_type={"single": 3, "east-west": 2},
     )
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
     assert len(metadata_df) == 5
     assert int((metadata_df["system_type"] == "single").sum()) == 3
     assert int((metadata_df["system_type"] == "east-west").sum()) == 2
@@ -177,7 +203,7 @@ def test_jittered_flat_realism_ranges(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs_flat"
 
-    generate_systems(
+    run_dir = generate_systems(
         weather_path,
         meta_path,
         out_dir,
@@ -188,7 +214,7 @@ def test_jittered_flat_realism_ranges(tmp_path: Path) -> None:
         roof_type="flat",
     )
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
     diff = (metadata_df["azimuth_west"] - metadata_df["azimuth_east"]) % 360
 
     assert ((diff - 180.0).abs() < 1e-9).all()
@@ -200,7 +226,7 @@ def test_jittered_pitched_realism_ranges(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs_pitched"
 
-    generate_systems(
+    run_dir = generate_systems(
         weather_path,
         meta_path,
         out_dir,
@@ -211,7 +237,7 @@ def test_jittered_pitched_realism_ranges(tmp_path: Path) -> None:
         roof_type="pitched",
     )
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
     diff = (metadata_df["azimuth_west"] - metadata_df["azimuth_east"]) % 360
 
     assert ((diff - 180.0).abs() < 1e-9).all()
@@ -223,9 +249,9 @@ def test_metadata_contains_lat_lon(tmp_path: Path) -> None:
     weather_path, meta_path = _prepare_inputs(tmp_path)
     out_dir = tmp_path / "outputs_latlon"
 
-    generate_systems(weather_path, meta_path, out_dir, n_systems=5, seed=11)
+    run_dir = generate_systems(weather_path, meta_path, out_dir, n_systems=5, seed=11)
 
-    metadata_df = pd.read_csv(out_dir / "systems_metadata.csv")
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
 
     assert "lat" in metadata_df.columns
     assert "lon" in metadata_df.columns
@@ -261,5 +287,7 @@ def test_generate_cli_with_quicklook_hook(tmp_path: Path) -> None:
         check=True,
     )
 
-    assert (out_dir / "system_001.csv").exists()
+    run_dirs = [path for path in out_dir.iterdir() if path.is_dir() and TIMESTAMP_PATTERN.fullmatch(path.name)]
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "system_001.csv").exists()
     assert (quicklook_dir / "system_001_quicklook.png").exists()
