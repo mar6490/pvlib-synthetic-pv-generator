@@ -30,6 +30,26 @@ def _write_weather_csv(path: Path) -> None:
     weather.to_csv(path, index=False, sep=";")
 
 
+
+
+def _write_weather_csv_naive(path: Path) -> None:
+    weather = pd.DataFrame(
+        {
+            "time": [
+                "2025-01-01 10:00:00",
+                "2025-01-01 10:05:00",
+                "2025-01-01 10:10:00",
+                "2025-01-01 10:15:00",
+            ],
+            "ghi": [500, 510, 520, 530],
+            "dhi": [100, 105, 110, 115],
+            "t_luft": [20, 20, 21, 21],
+            "v_wind": [2, 2, 3, 3],
+        }
+    )
+    weather.to_csv(path, index=False, sep=";")
+
+
 def _write_meta(path: Path) -> None:
     meta = {"lat": 52.5, "lon": 13.4, "tz": "Europe/Berlin"}
     path.write_text(json.dumps(meta), encoding="utf-8")
@@ -291,3 +311,64 @@ def test_generate_cli_with_quicklook_hook(tmp_path: Path) -> None:
     assert len(run_dirs) == 1
     assert (run_dirs[0] / "system_001.csv").exists()
     assert (quicklook_dir / "system_001_quicklook.png").exists()
+
+
+def test_naive_fixed_offset_outputs_plus_0100(tmp_path: Path) -> None:
+    weather_path = tmp_path / "wetter-naive-5min.csv"
+    meta_path = tmp_path / "meta.json"
+    out_dir = tmp_path / "outputs_fixed"
+    _write_weather_csv_naive(weather_path)
+    _write_meta(meta_path)
+
+    run_dir = generate_systems(
+        weather_path,
+        meta_path,
+        out_dir,
+        n_systems=2,
+        seed=5,
+        weather_timestamp="naive",
+        time_mode="fixed_offset",
+        fixed_offset_minutes=60,
+    )
+
+    metadata_df = pd.read_csv(run_dir / "systems_metadata.csv")
+    assert (metadata_df["time_mode"] == "fixed_offset").all()
+    assert (metadata_df["fixed_offset_minutes"] == 60).all()
+    assert (metadata_df["tz_name"] == "UTC+01:00").all()
+
+    system_df = pd.read_csv(run_dir / "system_001.csv")
+    time_strings = system_df["time"].astype(str)
+    assert time_strings.str.endswith("+01:00").all()
+    assert (~time_strings.str.endswith("+02:00")).all()
+
+
+def test_load_weather_naive_fixed_offset_index_is_aware(tmp_path: Path) -> None:
+    weather_path = tmp_path / "wetter-naive-5min.csv"
+    _write_weather_csv_naive(weather_path)
+
+    weather = load_weather(
+        weather_path,
+        "Europe/Berlin",
+        weather_timestamp="naive",
+        time_mode="fixed_offset",
+        fixed_offset_minutes=60,
+    )
+
+    assert isinstance(weather.index, pd.DatetimeIndex)
+    assert weather.index.tz is not None
+    assert weather.index[0].utcoffset().total_seconds() == 3600
+
+
+def test_with_offset_dst_backwards_compatible(tmp_path: Path) -> None:
+    weather_path = tmp_path / "wetter-with-offset.csv"
+    _write_weather_csv(weather_path)
+
+    weather = load_weather(
+        weather_path,
+        "Europe/Berlin",
+        weather_timestamp="with_offset",
+        time_mode="dst",
+        fixed_offset_minutes=60,
+    )
+
+    assert str(weather.index.tz) == "Europe/Berlin"

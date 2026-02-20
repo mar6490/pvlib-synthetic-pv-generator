@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 
@@ -16,13 +16,7 @@ TIMESTAMP_DIR_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 
 
 def create_run_directory(base_out_dir: Path) -> Path:
-    """Create and return the run directory using timestamped structure.
-
-    Rules:
-    - If ``base_out_dir`` already looks like a timestamped run directory,
-      use it directly.
-    - Otherwise create ``base_out_dir/<timestamp>``.
-    """
+    """Create and return the run directory using timestamped structure."""
     if TIMESTAMP_DIR_PATTERN.fullmatch(base_out_dir.name):
         run_dir = base_out_dir
     else:
@@ -31,6 +25,14 @@ def create_run_directory(base_out_dir: Path) -> Path:
 
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
+
+
+def _fixed_tz_name(fixed_offset_minutes: int) -> str:
+    sign = "+" if fixed_offset_minutes >= 0 else "-"
+    minutes_abs = abs(fixed_offset_minutes)
+    hours = minutes_abs // 60
+    minutes = minutes_abs % 60
+    return f"UTC{sign}{hours:02d}:{minutes:02d}"
 
 
 def generate_systems(
@@ -46,13 +48,30 @@ def generate_systems(
     roof_type: str = "mixed",
     ew_azimuth_jitter_deg: float | None = None,
     ew_tilt_range_deg: tuple[float, float] | None = None,
+    time_mode: str = "dst",
+    fixed_offset_minutes: int = 60,
+    weather_timestamp: str = "with_offset",
 ) -> Path:
     """Generate synthetic PV systems and write outputs to disk.
 
     Returns the resolved run directory path where files were written.
     """
     meta = load_site_meta(meta_path)
-    weather = load_weather(weather_path, meta["tz"])
+
+    if time_mode == "fixed_offset":
+        site_tz = timezone(timedelta(minutes=fixed_offset_minutes))
+        tz_name = _fixed_tz_name(fixed_offset_minutes)
+    else:
+        site_tz = meta["tz"]
+        tz_name = meta["tz"]
+
+    weather = load_weather(
+        weather_path,
+        meta["tz"],
+        weather_timestamp=weather_timestamp,
+        time_mode=time_mode,
+        fixed_offset_minutes=fixed_offset_minutes,
+    )
     scenarios = generate_scenarios(
         n_systems=n_systems,
         seed=seed,
@@ -71,6 +90,10 @@ def generate_systems(
     for config in scenarios:
         system_df = simulate_system(weather, meta, config)
         system_id = f"{config.system_id:03d}"
+
+        # Ensure output timestamps are serialized from the timezone-aware index.
+        system_df = system_df.copy()
+        system_df["time"] = pd.DatetimeIndex(system_df["time"]).tz_convert(site_tz)
         system_df.to_csv(output_path / f"system_{system_id}.csv", index=False)
 
         metadata_rows.append(
@@ -80,6 +103,9 @@ def generate_systems(
                 "plane_type": config.plane_type,
                 "roof_type": config.roof_type,
                 "ew_azimuth_mode": config.ew_azimuth_mode,
+                "time_mode": time_mode,
+                "fixed_offset_minutes": fixed_offset_minutes,
+                "tz_name": tz_name,
                 "lat": meta["lat"],
                 "lon": meta["lon"],
                 "kwp_total": config.kwp_total,

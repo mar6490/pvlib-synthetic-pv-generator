@@ -149,13 +149,42 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
+
+## Time mode
+
+The generator supports two weather-time interpretation modes:
+
+- `--time-mode dst` (default): use metadata timezone with DST behavior (e.g. `Europe/Berlin`).
+- `--time-mode fixed_offset`: use a fixed offset without DST (recommended for SDT-style processing).
+
+Related flags:
+- `--fixed-offset-minutes` (default `60`)
+- `--weather-timestamp` (`with_offset` or `naive`)
+
+For naive 5-minute logger timestamps with fixed UTC+1 year-round:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter_htw_2025_5min.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs \
+  --n-systems 20 \
+  --weather-timestamp naive \
+  --time-mode fixed_offset \
+  --fixed-offset-minutes 60 \
+  --seed 42
+```
+
+In fixed-offset mode, output timestamps are written with a constant offset (e.g. `+01:00`) and do not switch to summer time.
+
 ## Input weather format
 
 Strict CSV format:
 - separator `;`
 - header exactly: `time;ghi;dhi;t_luft;v_wind`
-- timestamp format: `YYYY-MM-DD HH:MM:SS±HH:MM`
-- fixed 15-minute resolution
+- timestamp format: either `YYYY-MM-DD HH:MM:SS±HH:MM` (`--weather-timestamp with_offset`)
+  or `YYYY-MM-DD HH:MM:SS` (`--weather-timestamp naive`)
+- fixed 5-minute or 15-minute regular resolution
 
 ## Output
 
@@ -170,6 +199,7 @@ Metadata file: `systems_metadata.csv`
 - `plane_type` (`south`/`east`/`west` for single)
 - `roof_type` (for east-west)
 - `ew_azimuth_mode` (for east-west)
+- `time_mode`, `fixed_offset_minutes`, `tz_name`
 - `lat`, `lon` (included for every system)
 - `kwp_total`
 - `kwp` (alias to `kwp_total`)

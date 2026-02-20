@@ -65,6 +65,25 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--time-mode",
+        choices=["dst", "fixed_offset"],
+        default="dst",
+        help="Time interpretation mode for weather and outputs",
+    )
+    parser.add_argument(
+        "--fixed-offset-minutes",
+        type=int,
+        default=60,
+        help="Fixed timezone offset in minutes when --time-mode fixed_offset",
+    )
+    parser.add_argument(
+        "--weather-timestamp",
+        choices=["with_offset", "naive"],
+        default="with_offset",
+        help="Timestamp format in weather CSV",
+    )
+
+    parser.add_argument(
         "--quicklook",
         action="store_true",
         help="Generate quicklook plots after successful generation",
@@ -107,6 +126,9 @@ def main() -> None:
         roof_type=args.roof_type,
         ew_azimuth_jitter_deg=args.ew_azimuth_jitter_deg,
         ew_tilt_range_deg=args.ew_tilt_range_deg,
+        time_mode=args.time_mode,
+        fixed_offset_minutes=args.fixed_offset_minutes,
+        weather_timestamp=args.weather_timestamp,
     )
 
     if args.quicklook:
