@@ -27,6 +27,9 @@ class SystemConfig:
     azimuth_west: float | None
     dc_ac_ratio: float
     losses: float
+    azimuth_center_deg_true: float | None = None
+    half_delta_deg_true: float | None = None
+    weight_true: float | None = None
 
 
 def _solar_position(times: pd.DatetimeIndex, meta: dict) -> pd.DataFrame:

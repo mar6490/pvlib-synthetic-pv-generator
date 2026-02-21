@@ -1,7 +1,7 @@
 # Assumptions
 
--   Logger time runs continuously without DST
--   5-minute resolution standard
--   East-West always 180° apart
--   NaN in simulation are numerical artifacts
--   Fixed offset suitable for DE/AT/CH analysis context
+- Time axis is always timezone-aware fixed offset (`fixed_offset_minutes`, default +60 minutes).
+- No DST-based output switching is used.
+- East-west geometry maintains 180° separation in random mode.
+- Noise is optional and AC-only; DC remains physical model output.
+- Defaults remain backward-compatible (`generation_mode=random`, `noise_model=none`).

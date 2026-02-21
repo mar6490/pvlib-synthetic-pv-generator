@@ -127,6 +127,7 @@ def load_weather(
 
     weather = weather.set_index(timestamps)
     weather.index.name = "time"
+    weather = weather.sort_index()
 
     _validate_time_regular(weather)
     _assert_fixed_offset_index(weather.index, fixed_offset_minutes)

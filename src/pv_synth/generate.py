@@ -8,8 +8,10 @@ import re
 
 import pandas as pd
 
+from pv_synth.grid import load_scenario_grid
 from pv_synth.io import DEFAULT_FIXED_OFFSET_MINUTES, load_site_meta, load_weather
-from pv_synth.pv_models import simulate_system
+from pv_synth.noise import apply_ac_noise
+from pv_synth.pv_models import SystemConfig, simulate_system
 from pv_synth.scenarios import generate_scenarios
 
 TIMESTAMP_DIR_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
@@ -33,6 +35,37 @@ def _fixed_tz_name(fixed_offset_minutes: int) -> str:
     return f"UTC{sign}{hours:02d}:{minutes:02d}"
 
 
+def _build_scenarios(
+    generation_mode: str,
+    scenario_file: str | Path | None,
+    n_systems: int,
+    seed: int | None,
+    system_type: str,
+    mix_weights: dict[str, float] | None,
+    n_by_type: dict[str, int] | None,
+    ew_azimuth_mode: str,
+    roof_type: str,
+    ew_azimuth_jitter_deg: float | None,
+    ew_tilt_range_deg: tuple[float, float] | None,
+) -> list[SystemConfig]:
+    if generation_mode == "grid":
+        if scenario_file is None:
+            raise ValueError("--scenario-file is required when --generation-mode=grid.")
+        return load_scenario_grid(scenario_file)
+
+    return generate_scenarios(
+        n_systems=n_systems,
+        seed=seed,
+        system_type=system_type,
+        mix_weights=mix_weights,
+        n_by_type=n_by_type,
+        ew_azimuth_mode=ew_azimuth_mode,
+        roof_type=roof_type,
+        ew_azimuth_jitter_deg=ew_azimuth_jitter_deg,
+        ew_tilt_range_deg=ew_tilt_range_deg,
+    )
+
+
 def generate_systems(
     weather_path: str | Path,
     meta_path: str | Path,
@@ -49,11 +82,14 @@ def generate_systems(
     time_mode: str = "fixed_offset",
     fixed_offset_minutes: int = DEFAULT_FIXED_OFFSET_MINUTES,
     weather_timestamp: str = "naive",
+    generation_mode: str = "random",
+    scenario_file: str | Path | None = None,
+    noise_model: str = "none",
+    noise_sigma_rel: float = 0.02,
 ) -> Path:
     """Generate synthetic PV systems and write outputs to disk."""
     meta = load_site_meta(meta_path)
 
-    # Project standard: always use fixed offset for simulation/output axis.
     site_tz = timezone(timedelta(minutes=fixed_offset_minutes))
     tz_name = _fixed_tz_name(fixed_offset_minutes)
     effective_time_mode = "fixed_offset"
@@ -68,7 +104,9 @@ def generate_systems(
     if len(offsets) != 1:
         raise ValueError(f"Weather index has varying offsets, expected fixed offset: {offsets}")
 
-    scenarios = generate_scenarios(
+    scenarios = _build_scenarios(
+        generation_mode=generation_mode,
+        scenario_file=scenario_file,
         n_systems=n_systems,
         seed=seed,
         system_type=system_type,
@@ -85,7 +123,14 @@ def generate_systems(
     metadata_rows = []
     for config in scenarios:
         system_df = simulate_system(weather, meta, config).copy()
+        system_df["ac_power_w"] = apply_ac_noise(
+            system_df["ac_power_w"],
+            noise_model=noise_model,
+            noise_sigma_rel=noise_sigma_rel,
+            seed=(seed or 0) + config.system_id,
+        )
         system_df["time"] = pd.DatetimeIndex(system_df["time"]).tz_convert(site_tz)
+
         system_id = f"{config.system_id:03d}"
         system_df.to_csv(output_path / f"system_{system_id}.csv", index=False)
 
@@ -100,6 +145,10 @@ def generate_systems(
                 "fixed_offset_minutes": fixed_offset_minutes,
                 "tz_name": tz_name,
                 "meta_tz": meta.get("tz"),
+                "seed": seed,
+                "generation_mode": generation_mode,
+                "noise_model": noise_model,
+                "noise_sigma_rel": noise_sigma_rel,
                 "lat": meta["lat"],
                 "lon": meta["lon"],
                 "kwp_total": config.kwp_total,
@@ -116,6 +165,13 @@ def generate_systems(
                 "azimuth_west": config.azimuth_west,
                 "dc_ac_ratio": config.dc_ac_ratio,
                 "losses": config.losses,
+                "tilt_deg_true": float(config.tilt) if config.system_type == "single" else None,
+                "azimuth_deg_true": float(config.azimuth) if config.system_type == "single" and config.azimuth is not None else None,
+                "azimuth_center_deg_true": config.azimuth_center_deg_true,
+                "half_delta_deg_true": config.half_delta_deg_true,
+                "azimuth_east_deg_true": float(config.azimuth_east) if config.azimuth_east is not None else None,
+                "azimuth_west_deg_true": float(config.azimuth_west) if config.azimuth_west is not None else None,
+                "weight_true": config.weight_true,
             }
         )
 

@@ -224,6 +224,7 @@ def generate_scenarios(
             )
             kwp_east = kwp_total / 2
             kwp_west = kwp_total / 2
+            center = (azimuth_east + 90.0) % 360.0
             scenarios.append(
                 SystemConfig(
                     system_id=idx,
@@ -240,6 +241,9 @@ def generate_scenarios(
                     azimuth_west=azimuth_west,
                     dc_ac_ratio=dc_ac_ratio,
                     losses=losses,
+                    azimuth_center_deg_true=center,
+                    half_delta_deg_true=90.0,
+                    weight_true=0.5,
                 )
             )
         else:
@@ -260,6 +264,9 @@ def generate_scenarios(
                     azimuth_west=None,
                     dc_ac_ratio=dc_ac_ratio,
                     losses=losses,
+                    azimuth_center_deg_true=None,
+                    half_delta_deg_true=None,
+                    weight_true=None,
                 )
             )
 

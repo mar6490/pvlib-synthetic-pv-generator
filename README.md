@@ -150,6 +150,55 @@ python scripts/generate_synthetic_pv.py \
 ```
 
 
+
+## Generation modes
+
+### `--generation-mode` (default: `random`)
+- `random`: current behavior with seed-based random scenario sampling.
+- `grid`: deterministic cartesian expansion from `--scenario-file` (seed does **not** change scenario order).
+
+### `--scenario-file`
+Required when `--generation-mode grid`. Example:
+
+```yaml
+single:
+  tilt_deg: [10, 25, 40]
+  azimuth_deg: [90, 135, 180, 225, 270]
+
+east-west:
+  center_deg: [0, 45, 90, 135, 180]
+  half_delta_deg: [90]
+  weight: [0.2, 0.5, 0.8]
+```
+
+Grid rule for east-west rows:
+- `azimuth_east = (center_deg - half_delta_deg) % 360`
+- `azimuth_west = (center_deg + half_delta_deg) % 360`
+
+Random mode example (backward compatible defaults):
+
+```bash
+python scripts/generate_synthetic_pv.py   --weather data/wetter-htw-2025-utc.csv   --meta data/site_meta.json   --out-dir outputs   --n-systems 30   --seed 42
+```
+
+Grid mode example:
+
+```bash
+python scripts/generate_synthetic_pv.py   --weather data/wetter-htw-2025-utc.csv   --meta data/site_meta.json   --out-dir outputs_grid   --generation-mode grid   --scenario-file data/scenarios.yml   --seed 42
+```
+
+## Optional AC noise
+
+- `--noise-model none|gaussian` (default: `none`)
+- `--noise-sigma-rel` (default: `0.02`, only used for gaussian)
+
+Noise is applied to AC only (DC remains unchanged), seeded deterministically from `--seed`.
+
+\[
+P_{ac,noisy}(t)=\max\left(0, P_{ac}(t)\cdot (1+\epsilon_t)
+ight),\quad \epsilon_t \sim \mathcal{N}(0,\sigma_{rel})
+\]
+
 ## Time mode
 
 The generator supports two weather-time interpretation modes:
@@ -200,6 +249,7 @@ Metadata file: `systems_metadata.csv`
 - `roof_type` (for east-west)
 - `ew_azimuth_mode` (for east-west)
 - `time_mode`, `fixed_offset_minutes`, `tz_name`
+- `seed`, `generation_mode`, `noise_model`, `noise_sigma_rel`
 - `lat`, `lon` (included for every system)
 - `kwp_total`
 - `kwp` (alias to `kwp_total`)
@@ -209,6 +259,7 @@ Metadata file: `systems_metadata.csv`
 - `azimuth_east`, `azimuth_west` (east-west)
 - `dc_ac_ratio`
 - `losses`
+- Ground truth fields: `tilt_deg_true`, `azimuth_deg_true`, `azimuth_center_deg_true`, `half_delta_deg_true`, `azimuth_east_deg_true`, `azimuth_west_deg_true`, `weight_true`
 
 
 ## Quicklook plots

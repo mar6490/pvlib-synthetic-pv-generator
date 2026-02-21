@@ -1,23 +1,34 @@
 # Pipeline
 
-## Input
+## Defaults
+- `generation_mode=random`
+- `time_mode=fixed_offset`
+- `fixed_offset_minutes=60`
+- `weather_timestamp=naive`
+- `noise_model=none`
+- `noise_sigma_rel=0.02`
 
-Weather CSV (5-min resolution) Meta JSON
+## Steps
+1. Load/validate weather and normalize to a fixed tz-aware UTC+offset index (no DST switching).
+2. Build scenarios:
+   - `random`: stochastic sampling controlled by `--seed`.
+   - `grid`: deterministic cartesian product from `--scenario-file`.
+3. Simulate per-system DC/AC with pvlib.
+4. Optionally apply AC-only noise.
+5. Persist per-system CSV plus machine-readable ground-truth metadata.
 
-## Processing Steps
+## Grid mode
+`grid` expands yaml axes deterministically. For east-west systems:
+- `azimuth_east = (center_deg - half_delta_deg) % 360`
+- `azimuth_west = (center_deg + half_delta_deg) % 360`
 
-1.  Parse timestamps → fixed UTC+01:00
-2.  Validate time regularity
-3.  Generate system scenarios
-4.  Compute solar position
-5.  Calculate DNI
-6.  Calculate POA
-7.  Compute DC
-8.  Compute AC
-9.  Export CSV
-10. Optional quicklook
+`--seed` does not affect scenario order in grid mode.
 
-## Output
+## Noise model
+For `--noise-model gaussian`:
 
--   system_XXX.csv
--   systems_metadata.csv
+\[
+P_{ac,noisy}(t)=\max\left(0, P_{ac}(t)\cdot (1+\epsilon_t)\right),\quad \epsilon_t \sim \mathcal{N}(0,\sigma_{rel})
+\]
+
+Noise is deterministic for fixed seed and is only applied to AC.

@@ -25,6 +25,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-systems", type=int, default=30, help="Number of systems")
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
     parser.add_argument(
+        "--generation-mode",
+        choices=["random", "grid"],
+        default="random",
+        help="Scenario generation mode",
+    )
+    parser.add_argument(
+        "--scenario-file",
+        default=None,
+        help="Path to scenario YAML file (required for --generation-mode grid)",
+    )
+
+    parser.add_argument(
         "--system-type",
         choices=["single", "east-west", "mixed"],
         default="mixed",
@@ -84,6 +96,19 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--noise-model",
+        choices=["none", "gaussian"],
+        default="none",
+        help="Optional AC-only noise model",
+    )
+    parser.add_argument(
+        "--noise-sigma-rel",
+        type=float,
+        default=0.02,
+        help="Relative sigma for gaussian AC noise",
+    )
+
+    parser.add_argument(
         "--quicklook",
         action="store_true",
         help="Generate quicklook plots after successful generation",
@@ -102,10 +127,14 @@ def parse_args() -> argparse.Namespace:
     except ValueError as exc:
         parser.error(str(exc))
 
-    if args.n_systems <= 0 and args.n_by_type is None:
+    if args.generation_mode == "grid" and not args.scenario_file:
+        parser.error("--scenario-file is required when --generation-mode=grid.")
+    if args.n_systems <= 0 and args.n_by_type is None and args.generation_mode == "random":
         parser.error("--n-systems must be > 0 unless --n-by-type is used.")
     if args.ew_azimuth_jitter_deg is not None and args.ew_azimuth_jitter_deg < 0:
         parser.error("--ew-azimuth-jitter-deg must be >= 0.")
+    if args.noise_sigma_rel < 0:
+        parser.error("--noise-sigma-rel must be >= 0.")
 
     return args
 
@@ -119,6 +148,8 @@ def main() -> None:
         out_dir=args.out_dir,
         n_systems=args.n_systems,
         seed=args.seed,
+        generation_mode=args.generation_mode,
+        scenario_file=args.scenario_file,
         system_type=args.system_type,
         mix_weights=args.mix_weights,
         n_by_type=args.n_by_type,
@@ -129,6 +160,8 @@ def main() -> None:
         time_mode=args.time_mode,
         fixed_offset_minutes=args.fixed_offset_minutes,
         weather_timestamp=args.weather_timestamp,
+        noise_model=args.noise_model,
+        noise_sigma_rel=args.noise_sigma_rel,
     )
 
     if args.quicklook:

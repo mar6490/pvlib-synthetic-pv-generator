@@ -1,22 +1,10 @@
 # Design Decisions
 
-## 1. Fixed Offset Timezone
+## Why add `grid` mode
+`random` is useful for diversity but not ideal for repeatable benchmark sweeps. `grid` mode creates deterministic combinations from explicit axes in YAML, enabling strict comparisons and ablation studies.
 
-Decision: Always use UTC+01:00 fixed. Reason: - SDT incompatibility with
-DST - Logger-style continuous time axis - Avoid mixed offsets (+01/+02)
+## Why AC-only noise
+We model measurement/inverter-side uncertainty as post-processing on AC output while preserving deterministic, physically-derived DC trajectories.
 
-## 2. East-West Modeling
-
-Decision: - Two independent DC calculations - 180° azimuth difference
-enforced - Jittered mode optional Reason: - Physical realism -
-Real-world EFH configurations
-
-## 3. Deterministic Sampling
-
-Decision: - Seed-based RNG - Deterministic type ordering Reason: -
-Reproducibility for research
-
-## 4. NaN Handling
-
-Decision (pending full implementation): - Replace NaN with 0 in output
-layer Reason: - Downstream tool stability
+## Metadata schema extension
+Ground-truth columns are numeric and explicit (`*_true`) so downstream profiling/evaluation avoids parsing string-encoded fields. Legacy columns remain for compatibility, but GT columns are the authoritative reference.
