@@ -181,6 +181,10 @@ def load_weather(
 
     weather = weather.set_index(timestamps)
     weather.index.name = "time"
+
+    # Convert the index to the site timezone from metadata.
+    # This keeps local-clock interpretation intuitive for users and tests.
+    weather.index = weather.index.tz_convert(tz)
     weather = weather.sort_index()
 
     _validate_time_regular(weather)
