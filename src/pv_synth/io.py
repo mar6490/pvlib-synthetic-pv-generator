@@ -1,8 +1,4 @@
-"""I/O helpers for synthetic PV generation.
-
-These functions focus on loading the input data (weather CSV and site metadata)
-with strict validation so that downstream PV modeling can rely on clean inputs.
-"""
+"""I/O helpers for synthetic PV generation."""
 
 from __future__ import annotations
 
@@ -18,11 +14,12 @@ REQUIRED_META_KEYS = {"lat", "lon", "tz"}
 TIME_PATTERN_WITH_OFFSET = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
 TIME_PATTERN_NAIVE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 EXPECTED_HEADER = "time;ghi;dhi;t_luft;v_wind"
-EXAMPLE_TIMESTAMP = "2025-01-01 00:00:00+01:00"
+DEFAULT_FIXED_OFFSET_MINUTES = 60
+DEFAULT_FIXED_TZ = timezone(timedelta(minutes=DEFAULT_FIXED_OFFSET_MINUTES))
+DEFAULT_TZ_NAME = "UTC+01:00"
 
 
 def load_site_meta(path: str | Path) -> dict:
-    """Load site metadata from JSON with validation."""
     meta_path = Path(path)
     if not meta_path.exists():
         raise FileNotFoundError(f"Site metadata file not found: {meta_path}")
@@ -38,32 +35,14 @@ def load_site_meta(path: str | Path) -> dict:
     return meta
 
 
-def _invalid_time_examples(time_series: pd.Series, mask: pd.Series) -> str:
-    examples = time_series.loc[mask].astype(str).head(5).tolist()
-    return ", ".join(examples)
-
-
 def parse_weather_time(
     series: pd.Series,
     weather_timestamp: str,
-    time_mode: str,
     fixed_offset_minutes: int,
-    meta_tz: str,
 ) -> pd.DatetimeIndex:
-    """Parse weather timestamps into one timezone-aware DatetimeIndex.
-
-    Modes:
-    - weather_timestamp=with_offset: parse timestamps with explicit offsets.
-    - weather_timestamp=naive: parse naive timestamps then localize.
-
-    Time handling:
-    - time_mode=dst: use metadata timezone (e.g. Europe/Berlin).
-    - time_mode=fixed_offset: use fixed offset (e.g. UTC+01:00) year-round.
-    """
+    """Parse weather timestamps into fixed UTC+offset timezone-aware index."""
     if weather_timestamp not in {"with_offset", "naive"}:
         raise ValueError("weather_timestamp must be 'with_offset' or 'naive'.")
-    if time_mode not in {"dst", "fixed_offset"}:
-        raise ValueError("time_mode must be 'dst' or 'fixed_offset'.")
 
     fixed_tz = timezone(timedelta(minutes=fixed_offset_minutes))
 
@@ -74,15 +53,8 @@ def parse_weather_time(
                 "Timestamps must include an explicit offset (±HH:MM) when "
                 "--weather-timestamp=with_offset."
             )
-
-        timestamps_utc = pd.to_datetime(series, errors="coerce", utc=True)
-        if timestamps_utc.isna().all():
-            raise ValueError("Could not parse any weather timestamps with offset.")
-
-        index = pd.DatetimeIndex(timestamps_utc)
-        if time_mode == "dst":
-            return index.tz_convert(meta_tz)
-        return index.tz_convert(fixed_tz)
+        timestamps_utc = pd.to_datetime(series, errors="raise", utc=True)
+        return pd.DatetimeIndex(timestamps_utc).tz_convert(fixed_tz)
 
     invalid_mask = ~series.str.match(TIME_PATTERN_NAIVE)
     if invalid_mask.any():
@@ -91,27 +63,15 @@ def parse_weather_time(
             "--weather-timestamp=naive."
         )
 
-    naive = pd.to_datetime(series, errors="coerce")
-    if naive.isna().all():
-        raise ValueError("Could not parse any naive weather timestamps.")
-
-    if time_mode == "dst":
-        localized = naive.dt.tz_localize(meta_tz, ambiguous="raise", nonexistent="raise")
-    else:
-        localized = naive.dt.tz_localize(fixed_tz)
-
+    naive = pd.to_datetime(series, errors="raise")
+    localized = naive.dt.tz_localize(fixed_tz)
     return pd.DatetimeIndex(localized)
 
 
 def _validate_time_regular(weather: pd.DataFrame) -> None:
     duplicate_mask = weather.index.duplicated(keep=False)
     if duplicate_mask.any():
-        duplicate_count = int(duplicate_mask.sum())
-        examples = ", ".join(weather.index[duplicate_mask].astype(str).unique()[:5])
-        raise ValueError(
-            "Weather data contains duplicate timestamps. "
-            f"Duplicate count: {duplicate_count}. Examples: {examples}."
-        )
+        raise ValueError("Weather data contains duplicate timestamps.")
 
     time_diffs = weather.index.to_series().diff().dropna()
     if time_diffs.empty:
@@ -120,39 +80,37 @@ def _validate_time_regular(weather: pd.DataFrame) -> None:
     reference_step = time_diffs.mode().iloc[0]
     irregular_mask = time_diffs != reference_step
     if irregular_mask.any():
-        irregular_indices = time_diffs[irregular_mask].index
-        examples = []
-        for current in irregular_indices[:5]:
-            previous = current - time_diffs.loc[current]
-            examples.append(f"{previous} -> {current}")
+        first = time_diffs[irregular_mask].index[0]
+        previous = first - time_diffs.loc[first]
         raise ValueError(
             "Weather data has irregular time steps. "
-            f"Irregular count: {int(irregular_mask.sum())}. "
-            f"Examples: {', '.join(examples)}. "
+            f"First gap around: {previous} -> {first}. "
             f"Expected consistent resolution of {reference_step}."
         )
 
 
+def _assert_fixed_offset_index(index: pd.DatetimeIndex, fixed_offset_minutes: int) -> None:
+    if index.tz is None:
+        raise ValueError("Weather index must be timezone-aware.")
+    offsets = index.strftime("%z").unique().tolist()
+    expected = f"{fixed_offset_minutes // 60:+03d}00" if fixed_offset_minutes % 60 == 0 else None
+    if len(offsets) != 1:
+        raise ValueError(f"Weather index has varying UTC offsets: {offsets}")
+    if expected is not None and offsets[0] != expected:
+        raise ValueError(f"Weather index offset {offsets[0]} does not match fixed offset {expected}.")
+
+
 def load_weather(
     path: str | Path,
-    tz: str,
-    weather_timestamp: str = "with_offset",
-    time_mode: str = "dst",
-    fixed_offset_minutes: int = 60,
+    weather_timestamp: str = "naive",
+    fixed_offset_minutes: int = DEFAULT_FIXED_OFFSET_MINUTES,
 ) -> pd.DataFrame:
-    """Load weather CSV, validate columns, and return timezone-aware data."""
+    """Load weather CSV and return fixed-offset timezone-aware data."""
     weather_path = Path(path)
     if not weather_path.exists():
         raise FileNotFoundError(f"Weather CSV not found: {weather_path}")
 
-    try:
-        weather = pd.read_csv(weather_path, sep=";")
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(
-            "Expected a semicolon-separated CSV (sep=';') with header: "
-            f"{EXPECTED_HEADER}"
-        ) from exc
-
+    weather = pd.read_csv(weather_path, sep=";")
     if list(weather.columns) != REQUIRED_WEATHER_COLUMNS:
         found = ", ".join(weather.columns)
         raise ValueError(
@@ -164,29 +122,12 @@ def load_weather(
     timestamps = parse_weather_time(
         series=time_series,
         weather_timestamp=weather_timestamp,
-        time_mode=time_mode,
         fixed_offset_minutes=fixed_offset_minutes,
-        meta_tz=tz,
     )
-
-    nat_mask = timestamps.isna()
-    if nat_mask.any():
-        invalid_count = int(nat_mask.sum())
-        examples = _invalid_time_examples(time_series, nat_mask)
-        raise ValueError(
-            "Weather data contains unparsable timestamps. "
-            f"Invalid count: {invalid_count}. Examples: {examples}. "
-            f"Expected example with offset: {EXAMPLE_TIMESTAMP}."
-        )
 
     weather = weather.set_index(timestamps)
     weather.index.name = "time"
 
-    # Convert the index to the site timezone from metadata.
-    # This keeps local-clock interpretation intuitive for users and tests.
-    weather.index = weather.index.tz_convert(tz)
-    weather = weather.sort_index()
-
     _validate_time_regular(weather)
-
+    _assert_fixed_offset_index(weather.index, fixed_offset_minutes)
     return weather

@@ -67,8 +67,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--time-mode",
         choices=["dst", "fixed_offset"],
-        default="dst",
-        help="Time interpretation mode for weather and outputs",
+        default="fixed_offset",
+        help="Time interpretation mode (fixed_offset is project standard; dst is deprecated)",
     )
     parser.add_argument(
         "--fixed-offset-minutes",
@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--weather-timestamp",
         choices=["with_offset", "naive"],
-        default="with_offset",
+        default="naive",
         help="Timestamp format in weather CSV",
     )
 

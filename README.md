@@ -154,8 +154,8 @@ python scripts/generate_synthetic_pv.py \
 
 The generator supports two weather-time interpretation modes:
 
-- `--time-mode dst` (default): use metadata timezone with DST behavior (e.g. `Europe/Berlin`).
-- `--time-mode fixed_offset`: use a fixed offset without DST (recommended for SDT-style processing).
+- `--time-mode fixed_offset` (default): fixed offset without DST (project standard).
+- `--time-mode dst`: deprecated compatibility option; avoid for SDT workflows.
 
 Related flags:
 - `--fixed-offset-minutes` (default `60`)
@@ -216,7 +216,7 @@ Metadata file: `systems_metadata.csv`
 You can create AC-only quicklook figures for existing generated systems (independent from generation):
 
 ```bash
-python scripts/quicklook_systems.py --in-dir outputs/2026-02-20_16-45-12 --tz Europe/Berlin
+python scripts/quicklook_systems.py --in-dir outputs/2026-02-20_16-45-12 --tz UTC
 ```
 
 

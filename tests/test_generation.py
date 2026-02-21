@@ -16,6 +16,44 @@ def _write_weather_csv(path: Path) -> None:
     weather = pd.DataFrame(
         {
             "time": [
+                "2025-01-01 10:00:00",
+                "2025-01-01 10:15:00",
+                "2025-01-01 10:30:00",
+                "2025-01-01 10:45:00",
+            ],
+            "ghi": [500, 520, 530, 540],
+            "dhi": [100, 110, 120, 130],
+            "t_luft": [20, 20, 21, 21],
+            "v_wind": [2, 2, 3, 3],
+        }
+    )
+    weather.to_csv(path, index=False, sep=";")
+
+
+
+
+def _write_weather_csv_naive(path: Path) -> None:
+    weather = pd.DataFrame(
+        {
+            "time": [
+                "2025-01-01 10:00:00",
+                "2025-01-01 10:05:00",
+                "2025-01-01 10:10:00",
+                "2025-01-01 10:15:00",
+            ],
+            "ghi": [500, 510, 520, 530],
+            "dhi": [100, 105, 110, 115],
+            "t_luft": [20, 20, 21, 21],
+            "v_wind": [2, 2, 3, 3],
+        }
+    )
+    weather.to_csv(path, index=False, sep=";")
+
+
+def _write_weather_csv_with_offset(path: Path) -> None:
+    weather = pd.DataFrame(
+        {
+            "time": [
                 "2025-01-01 10:00:00+01:00",
                 "2025-01-01 10:15:00+01:00",
                 "2025-01-01 10:30:00+01:00",
@@ -64,9 +102,10 @@ def _prepare_inputs(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_load_weather_localizes_timezone(tmp_path: Path) -> None:
-    weather_path, _ = _prepare_inputs(tmp_path)
-    weather = load_weather(weather_path, "Europe/Berlin")
-    assert str(weather.index.tz) == "Europe/Berlin"
+    weather_path = tmp_path / "wetter-with-offset.csv"
+    _write_weather_csv_with_offset(weather_path)
+    weather = load_weather(weather_path, weather_timestamp="with_offset", fixed_offset_minutes=60)
+    assert weather.index[0].utcoffset().total_seconds() == 3600
 
 
 def test_generation_outputs_match_input_length(tmp_path: Path) -> None:
@@ -327,7 +366,6 @@ def test_naive_fixed_offset_outputs_plus_0100(tmp_path: Path) -> None:
         n_systems=2,
         seed=5,
         weather_timestamp="naive",
-        time_mode="fixed_offset",
         fixed_offset_minutes=60,
     )
 
@@ -348,9 +386,7 @@ def test_load_weather_naive_fixed_offset_index_is_aware(tmp_path: Path) -> None:
 
     weather = load_weather(
         weather_path,
-        "Europe/Berlin",
         weather_timestamp="naive",
-        time_mode="fixed_offset",
         fixed_offset_minutes=60,
     )
 
@@ -359,19 +395,17 @@ def test_load_weather_naive_fixed_offset_index_is_aware(tmp_path: Path) -> None:
     assert weather.index[0].utcoffset().total_seconds() == 3600
 
 
-def test_with_offset_dst_backwards_compatible(tmp_path: Path) -> None:
+def test_with_offset_also_normalized_to_fixed_offset(tmp_path: Path) -> None:
     weather_path = tmp_path / "wetter-with-offset.csv"
-    _write_weather_csv(weather_path)
+    _write_weather_csv_with_offset(weather_path)
 
     weather = load_weather(
         weather_path,
-        "Europe/Berlin",
         weather_timestamp="with_offset",
-        time_mode="dst",
         fixed_offset_minutes=60,
     )
 
-    assert str(weather.index.tz) == "Europe/Berlin"
+    assert weather.index[0].utcoffset().total_seconds() == 3600
 
 
 def test_no_nan_in_output_under_nan_prone_irradiance(tmp_path: Path) -> None:
@@ -404,7 +438,6 @@ def test_no_nan_in_output_under_nan_prone_irradiance(tmp_path: Path) -> None:
         n_systems=2,
         seed=7,
         weather_timestamp="with_offset",
-        time_mode="fixed_offset",
         fixed_offset_minutes=60,
     )
 
@@ -412,3 +445,17 @@ def test_no_nan_in_output_under_nan_prone_irradiance(tmp_path: Path) -> None:
         df = pd.read_csv(path)
         assert not df["dc_power_w"].isna().any()
         assert not df["ac_power_w"].isna().any()
+
+
+def test_default_cli_time_policy_is_fixed_plus_0100(tmp_path: Path) -> None:
+    weather_path = tmp_path / "wetter-naive-default.csv"
+    meta_path = tmp_path / "meta.json"
+    out_dir = tmp_path / "outputs_default"
+    _write_weather_csv_naive(weather_path)
+    _write_meta(meta_path)
+
+    run_dir = generate_systems(weather_path, meta_path, out_dir, n_systems=1, seed=13)
+    system_df = pd.read_csv(run_dir / "system_001.csv")
+    ts = system_df["time"].astype(str)
+    assert ts.str.endswith("+01:00").all()
+    assert (~ts.str.endswith("+02:00")).all()
