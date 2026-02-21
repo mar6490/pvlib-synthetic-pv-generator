@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 import pvlib
 
@@ -37,9 +38,33 @@ def _solar_position(times: pd.DatetimeIndex, meta: dict) -> pd.DataFrame:
     )
 
 
-def _dni_from_ghi_dhi(ghi: pd.Series, dhi: pd.Series, zenith: pd.Series) -> pd.Series:
-    dni = pvlib.irradiance.dni(ghi=ghi, dhi=dhi, zenith=zenith)
-    return dni.clip(lower=0)
+def _dni_from_ghi_dhi(
+    ghi: pd.Series,
+    dhi: pd.Series,
+    zenith: pd.Series,
+    apparent_zenith: pd.Series,
+    meta: dict,
+) -> pd.Series:
+    """Estimate DNI and apply conservative, NaN-safe fallback handling."""
+    location = pvlib.location.Location(
+        latitude=meta["lat"],
+        longitude=meta["lon"],
+        tz=meta.get("tz", "UTC"),
+        altitude=meta.get("altitude", 0),
+    )
+    clearsky = location.get_clearsky(ghi.index, model="ineichen")
+    dni_clear = clearsky["dni"]
+
+    dni = pvlib.irradiance.dni(
+        ghi=ghi,
+        dhi=dhi,
+        zenith=zenith,
+        dni_clear=dni_clear,
+        clearsky_tolerance=1.1,
+    )
+    dni = dni.replace([np.inf, -np.inf], np.nan)
+    dni = dni.where(apparent_zenith < 90, 0.0)
+    return dni.fillna(0.0).clip(lower=0)
 
 
 def _poa_irradiance(
@@ -59,7 +84,7 @@ def _poa_irradiance(
         ghi=ghi,
         dhi=dhi,
     )
-    return poa["poa_global"].clip(lower=0)
+    return poa["poa_global"].replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 
 
 def _dc_power(
@@ -71,12 +96,13 @@ def _dc_power(
     temp_cell = pvlib.temperature.pvsyst_cell(
         poa_global, temp_air=temp_air, wind_speed=wind_speed
     )
-    return pvlib.pvsystem.pvwatts_dc(
+    dc = pvlib.pvsystem.pvwatts_dc(
         poa_global,
         temp_cell,
         pdc0=kwp * 1000,
         gamma_pdc=-0.004,
-    ).clip(lower=0)
+    )
+    return dc.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 
 
 def _ac_power(
@@ -87,11 +113,12 @@ def _ac_power(
 ) -> pd.Series:
     pac0 = kwp_total * 1000 / dc_ac_ratio
     pdc0 = pac0 / eta_inv_nom
-    return pvlib.inverter.pvwatts(
+    ac = pvlib.inverter.pvwatts(
         dc_power,
         pdc0=pdc0,
         eta_inv_nom=eta_inv_nom,
-    ).clip(lower=0)
+    )
+    return ac.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 
 
 def simulate_system(
@@ -100,7 +127,13 @@ def simulate_system(
     config: SystemConfig,
 ) -> pd.DataFrame:
     solar_position = _solar_position(weather.index, meta)
-    dni = _dni_from_ghi_dhi(weather["ghi"], weather["dhi"], solar_position["zenith"])
+    dni = _dni_from_ghi_dhi(
+        weather["ghi"],
+        weather["dhi"],
+        solar_position["zenith"],
+        solar_position["apparent_zenith"],
+        meta,
+    )
 
     if config.system_type == "east-west":
         if config.azimuth_east is None or config.azimuth_west is None:
@@ -146,6 +179,9 @@ def simulate_system(
         ) * (1 - config.losses)
 
     ac_power = _ac_power(dc_power, config.kwp_total, config.dc_ac_ratio)
+
+    dc_power = dc_power.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
+    ac_power = ac_power.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 
     return pd.DataFrame(
         {

@@ -372,3 +372,43 @@ def test_with_offset_dst_backwards_compatible(tmp_path: Path) -> None:
     )
 
     assert str(weather.index.tz) == "Europe/Berlin"
+
+
+def test_no_nan_in_output_under_nan_prone_irradiance(tmp_path: Path) -> None:
+    weather_path = tmp_path / "wetter-edge.csv"
+    meta_path = tmp_path / "meta.json"
+    out_dir = tmp_path / "outputs_edge"
+
+    weather = pd.DataFrame(
+        {
+            "time": [
+                "2025-01-01 06:00:00+01:00",
+                "2025-01-01 06:05:00+01:00",
+                "2025-01-01 06:10:00+01:00",
+                "2025-01-01 06:15:00+01:00",
+                "2025-01-01 06:20:00+01:00",
+            ],
+            "ghi": [0, 5, 10, 20, 30],
+            "dhi": [0, 10, 15, 25, 35],
+            "t_luft": [5, 5, 5, 5, 5],
+            "v_wind": [1, 1, 1, 1, 1],
+        }
+    )
+    weather.to_csv(weather_path, index=False, sep=";")
+    _write_meta(meta_path)
+
+    run_dir = generate_systems(
+        weather_path,
+        meta_path,
+        out_dir,
+        n_systems=2,
+        seed=7,
+        weather_timestamp="with_offset",
+        time_mode="fixed_offset",
+        fixed_offset_minutes=60,
+    )
+
+    for path in run_dir.glob("system_*.csv"):
+        df = pd.read_csv(path)
+        assert not df["dc_power_w"].isna().any()
+        assert not df["ac_power_w"].isna().any()
