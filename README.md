@@ -1,54 +1,19 @@
-# Synthetic PV Generator (pvlib)
+# Synthetic PV Profile Generator (pvlib-based)
 
-Generate synthetic residential PV power time series from measured weather data
-using pvlib. Intended for testing PV orientation and shading inference methods.
+This project creates synthetic PV power profiles from measured weather data.
 
-This repository reads an existing weather file (no new weather data is created)
-and produces multiple PV system time series plus a metadata summary.
-
-## Features
-- 15-minute resolution
-- Typical residential systems (DACH)
-- Variable tilt, azimuth, size
-- pvlib-based physical modeling
-
-## Status
-Work in progress.
-
-## What this repository does
-- Reads 15-minute weather data (GHI, DHI, air temperature, wind speed) from a CSV.
-- Computes solar position, derived DNI, POA irradiance, cell temperature, and DC/AC
-  power using pvlib (PVWatts models).
-- Generates multiple residential PV scenarios typical for DACH, including south,
-  east, west, and combined east-west orientations.
-- Writes per-system CSVs containing DC and AC power and a consolidated metadata file.
-
-## Weather input format (strict)
-The pipeline accepts **only one** weather file format and will fail fast otherwise:
-- CSV must be semicolon-separated (`;`).
-- Required header (case-sensitive): `time;ghi;dhi;t_luft;v_wind`.
-- `time` must include an explicit UTC offset (`±HH:MM`), e.g. `+01:00` or `+02:00`.
-- Resolution must be continuous at 15-minute intervals.
-- Internally, timestamps are converted to UTC.
-
-Example (copy/paste):
-```csv
-time;ghi;dhi;t_luft;v_wind
-2025-01-01 00:00:00+01:00;0;0;1.5;6.8933333333333335
-2025-01-01 00:15:00+01:00;0;0;1.4466666666666668;7.446666666666666
-2025-01-01 00:30:00+01:00;0;0;1.4333333333333333;7.053333333333334
-2025-01-01 00:45:00+01:00;0;0;1.4133333333333333;6.94
-2025-01-01 01:00:00+01:00;0;0;1.4533333333333334;7.006666666666667
-```
+## Key point
+Synthetic shading is removed. The generator produces unshaded systems only.
 
 ## Usage
+
 Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Generate synthetic systems:
+Generate profiles:
 
 ```bash
 python scripts/generate_synthetic_pv.py \
@@ -59,48 +24,287 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
-Outputs:
-- Per-system CSVs at `outputs/system_<id>.csv`
-- `outputs/systems_metadata.csv` for system definitions
 
-## Output details
-- `outputs/system_<id>.csv` columns:
-  - `time`: UTC timestamps
-  - `dc_power_w`: DC power in watts
-  - `ac_power_w`: AC power in watts (after inverter clipping)
-  - `shading_factor`: multiplicative shading applied to POA irradiance
-- `outputs/systems_metadata.csv` columns:
-  - `system_id`, `system_type`, `kwp`, `tilt`, `azimuth`, `dc_ac_ratio`,
-    `losses`, `shading_model`, `shading_profiles`, `horizon_deg`, `strength`,
-    `softness_deg`, `sectors`
+## Timestamped output structure
 
-## System ranges and orientations
-- kWp range: 3–15 kWp (randomized per system).
-- Tilt range: 10–45 degrees.
-- Azimuth ranges (degrees):
-  - South-facing: centered around 180°, clipped to 135–225°.
-  - East-facing: centered around 90°, clipped to 70–110°.
-  - West-facing: centered around 270°, clipped to 250–290°.
-- Combined orientation:
-  - East–West systems are modeled as two sub-arrays (90° and 270°) with the
-    total kWp split evenly.
+Generation now writes into a timestamped run folder.
 
-## Shading behavior
-- Shading is a geometric approximation of horizon obstruction using solar azimuth
-  and elevation, not fixed clock times.
-- Each system is assigned a `shading_model` of `none` or `horizon_obstruction`.
-- For `horizon_obstruction`, sectors define azimuth ranges and a horizon cutoff
-  elevation. Shading strength ramps smoothly around the horizon.
-- The model is deterministic and does not vary by month; it depends only on the
-  sun position.
+Example:
+- Input `--out-dir outputs`
+- Effective run folder: `outputs/YYYY-MM-DD_HH-MM-SS/`
 
-Example profile (east obstruction):
+If `--out-dir` already points to a timestamped run directory (for example `outputs/2026-02-20_16-12-33`), no extra nested timestamp folder is created.
+
+## System-type controls
+
+### `--system-type`
+- `single`: only single-plane systems
+- `east-west`: only two-plane east-west systems
+- `mixed`: random mix (default)
+
+### `--mix-weights`
+Used in `mixed` mode. Format:
+
+```text
+single=0.7,east-west=0.3
 ```
-shading_model: horizon_obstruction
-sectors: [(60, 150)]
-horizon_deg: 12
-strength: 0.6
-softness_deg: 4
+
+Rules:
+- keys only `single`, `east-west`
+- non-negative values
+- sum must equal 1.0
+
+### `--n-by-type`
+Optional explicit counts. Overrides `--n-systems` and `--mix-weights`.
+
+```text
+east-west=20,single=10
 ```
-Interpretation: when the sun is in the east sector and below ~12° elevation,
-the irradiance is reduced smoothly with strength 0.6.
+
+## East-west parametrization (new)
+
+### `--ew-azimuth-mode`
+- `fixed_cardinal` (default, backwards compatible): east/west azimuths fixed at 90/270
+- `jittered_180` (realistic): east azimuth is jittered around 90°, west is always exactly 180° apart
+
+### `--roof-type`
+- `flat`
+- `pitched`
+- `mixed` (default; per east-west system sampled 50/50 flat vs pitched)
+
+### Optional east-west overrides
+- `--ew-azimuth-jitter-deg X`
+  - overrides default jitter width in `jittered_180` mode (`delta ~ Uniform(-X, +X)`)
+- `--ew-tilt-range-deg "a,b"`
+  - overrides east-west tilt sampling (`tilt ~ Uniform(a,b)`)
+
+Default east-west behavior without overrides:
+- `fixed_cardinal`: 90/270
+- `jittered_180` + roof type `flat`: jitter ±15°, tilt 5..20°
+- `jittered_180` + roof type `pitched`: jitter ±30°, tilt 20..55°
+
+> These east-west options are only relevant for east-west systems.
+
+## Examples
+
+20 east-west systems:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_ew \
+  --n-systems 20 \
+  --system-type east-west \
+  --seed 42
+```
+
+Only single-plane systems:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_single \
+  --n-systems 20 \
+  --system-type single \
+  --seed 42
+```
+
+Mixed 50/50:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_mix \
+  --n-systems 40 \
+  --system-type mixed \
+  --mix-weights "single=0.5,east-west=0.5" \
+  --seed 42
+```
+
+Explicit counts:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_counts \
+  --n-by-type "east-west=20,single=10" \
+  --seed 42
+```
+
+Realistic east-west parametrization:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_ew_real \
+  --n-systems 20 \
+  --system-type east-west \
+  --ew-azimuth-mode jittered_180 \
+  --roof-type mixed \
+  --seed 42
+```
+
+
+
+## Generation modes
+
+### `--generation-mode` (default: `random`)
+- `random`: current behavior with seed-based random scenario sampling.
+- `grid`: deterministic cartesian expansion from `--scenario-file` (seed does **not** change scenario order).
+
+### `--scenario-file`
+Required when `--generation-mode grid`. Example:
+
+```yaml
+single:
+  tilt_deg: [10, 25, 40]
+  azimuth_deg: [90, 135, 180, 225, 270]
+
+east-west:
+  center_deg: [0, 45, 90, 135, 180]
+  half_delta_deg: [90]
+  weight: [0.2, 0.5, 0.8]
+```
+
+Grid rule for east-west rows:
+- `azimuth_east = (center_deg - half_delta_deg) % 360`
+- `azimuth_west = (center_deg + half_delta_deg) % 360`
+
+Random mode example (backward compatible defaults):
+
+```bash
+python scripts/generate_synthetic_pv.py   --weather data/wetter-htw-2025-utc.csv   --meta data/site_meta.json   --out-dir outputs   --n-systems 30   --seed 42
+```
+
+Grid mode example:
+
+```bash
+python scripts/generate_synthetic_pv.py   --weather data/wetter-htw-2025-utc.csv   --meta data/site_meta.json   --out-dir outputs_grid   --generation-mode grid   --scenario-file data/scenarios.yml   --seed 42
+```
+
+## Optional AC noise
+
+- `--noise-model none|gaussian` (default: `none`)
+- `--noise-sigma-rel` (default: `0.02`, only used for gaussian)
+
+Noise is applied to AC only (DC remains unchanged), seeded deterministically from `--seed`.
+
+\[
+P_{ac,noisy}(t)=\max\left(0, P_{ac}(t)\cdot (1+\epsilon_t)ight),\quad \epsilon_t \sim \mathcal{N}(0,\sigma_{rel})
+\]
+
+## Time mode
+
+The generator supports two weather-time interpretation modes:
+
+- `--time-mode fixed_offset` (default): fixed offset without DST (project standard).
+- `--time-mode dst`: deprecated compatibility option; avoid for SDT workflows.
+
+Related flags:
+- `--fixed-offset-minutes` (default `60`)
+- `--weather-timestamp` (`with_offset` or `naive`)
+
+For naive 5-minute logger timestamps with fixed UTC+1 year-round:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter_htw_2025_5min.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs \
+  --n-systems 20 \
+  --weather-timestamp naive \
+  --time-mode fixed_offset \
+  --fixed-offset-minutes 60 \
+  --seed 42
+```
+
+In fixed-offset mode, output timestamps are written with a constant offset (e.g. `+01:00`) and do not switch to summer time.
+
+## Input weather format
+
+Strict CSV format:
+- separator `;`
+- header exactly: `time;ghi;dhi;t_luft;v_wind`
+- timestamp format: either `YYYY-MM-DD HH:MM:SS±HH:MM` (`--weather-timestamp with_offset`)
+  or `YYYY-MM-DD HH:MM:SS` (`--weather-timestamp naive`)
+- fixed 5-minute or 15-minute regular resolution
+
+## Output
+
+Per system file: `system_<id>.csv`
+- `time`
+- `dc_power_w`
+- `ac_power_w`
+
+Metadata file: `systems_metadata.csv`
+- `system_id`
+- `system_type` (`single` or `east-west`)
+- `plane_type` (`south`/`east`/`west` for single)
+- `roof_type` (for east-west)
+- `ew_azimuth_mode` (for east-west)
+- `time_mode`, `fixed_offset_minutes`, `tz_name`
+- `seed`, `generation_mode`, `noise_model`, `noise_sigma_rel`
+- `lat`, `lon` (included for every system)
+- `kwp_total`
+- `kwp` (alias to `kwp_total`)
+- `kwp_east`, `kwp_west` (east-west)
+- `tilt`
+- `azimuth`
+- `azimuth_east`, `azimuth_west` (east-west)
+- `dc_ac_ratio`
+- `losses`
+- Ground truth fields: `tilt_deg_true`, `azimuth_deg_true`, `azimuth_center_deg_true`, `half_delta_deg_true`, `azimuth_east_deg_true`, `azimuth_west_deg_true`, `weight_true`
+
+
+## Quicklook plots
+
+You can create AC-only quicklook figures for existing generated systems (independent from generation):
+
+```bash
+python scripts/quicklook_systems.py --in-dir outputs/2026-02-20_16-45-12 --tz UTC
+```
+
+
+Default standalone quicklook output for `--in-dir` is also timestamped:
+- `--in-dir outputs/2026-02-20_16-45-12`
+- output: `outputs/2026-02-20_16-45-12/quicklooks_YYYY-MM-DD_HH-MM-SS/`
+
+If you pass `--out-dir`, it is used directly (created if needed) without adding another timestamp subfolder.
+
+Times are parsed robustly with UTC (`pd.to_datetime(..., utc=True)`) and then optionally converted for plotting via `--tz` (default: `UTC`).
+
+Or via glob:
+
+```bash
+python scripts/quicklook_systems.py --glob "outputs/system_*.csv" --out-dir outputs/quicklooks
+```
+
+Each system gets one PNG with 3 panels:
+- AC heatmap (date vs minute-of-day)
+- Median daily AC profile (optionally normalized)
+- Representative 7-day AC window around max-energy day
+
+Optional convenience hook during generation:
+
+```bash
+python scripts/generate_synthetic_pv.py ... --quicklook
+# quicklooks will be written to <run_dir>/quicklooks/
+```
+
+Use `--quicklook-dir` to override the default output folder (`<run-dir>/quicklooks`).
+
+## Reproducibility
+
+Use `--seed` for deterministic generation.
+Same input + same seed + same CLI options => same type distribution and sampled parameters.
+
+## Tests
+
+```bash
+pytest
+```

@@ -1,36 +1,38 @@
-"""PV modeling functions using pvlib.
-
-This module turns weather data plus system configuration into DC and AC power.
-It uses pvlib for solar position, irradiance transposition, temperature, and
-PVWatts-style power models.
-"""
+"""Physical PV simulation functions based on pvlib."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 import pvlib
-
-from pv_synth.shading import compute_shading_factor
 
 
 @dataclass
 class SystemConfig:
-    """Configuration for a synthetic PV system."""
+    """Configuration parameters for one synthetic PV system."""
+
     system_id: int
     system_type: str
-    kwp: float
+    plane_type: str | None
+    roof_type: str | None
+    ew_azimuth_mode: str | None
+    kwp_total: float
+    kwp_east: float | None
+    kwp_west: float | None
     tilt: float
     azimuth: float | None
+    azimuth_east: float | None
+    azimuth_west: float | None
     dc_ac_ratio: float
     losses: float
-    shading_model: str
-    shading_profiles: dict[str, dict]
+    azimuth_center_deg_true: float | None = None
+    half_delta_deg_true: float | None = None
+    weight_true: float | None = None
 
 
 def _solar_position(times: pd.DatetimeIndex, meta: dict) -> pd.DataFrame:
-    """Compute solar position for each timestamp."""
     return pvlib.solarposition.get_solarposition(
         times,
         latitude=meta["lat"],
@@ -39,10 +41,33 @@ def _solar_position(times: pd.DatetimeIndex, meta: dict) -> pd.DataFrame:
     )
 
 
-def _dni_from_ghi_dhi(ghi: pd.Series, dhi: pd.Series, zenith: pd.Series) -> pd.Series:
-    """Estimate DNI from GHI, DHI, and solar zenith."""
-    dni = pvlib.irradiance.dni(ghi=ghi, dhi=dhi, zenith=zenith)
-    return dni.clip(lower=0)
+def _dni_from_ghi_dhi(
+    ghi: pd.Series,
+    dhi: pd.Series,
+    zenith: pd.Series,
+    apparent_zenith: pd.Series,
+    meta: dict,
+) -> pd.Series:
+    """Estimate DNI and apply conservative, NaN-safe fallback handling."""
+    location = pvlib.location.Location(
+        latitude=meta["lat"],
+        longitude=meta["lon"],
+        tz=meta.get("tz", "UTC"),
+        altitude=meta.get("altitude", 0),
+    )
+    clearsky = location.get_clearsky(ghi.index, model="ineichen")
+    dni_clear = clearsky["dni"]
+
+    dni = pvlib.irradiance.dni(
+        ghi=ghi,
+        dhi=dhi,
+        zenith=zenith,
+        dni_clear=dni_clear,
+        clearsky_tolerance=1.1,
+    )
+    dni = dni.replace([np.inf, -np.inf], np.nan)
+    dni = dni.where(apparent_zenith < 90, 0.0)
+    return dni.fillna(0.0).clip(lower=0)
 
 
 def _poa_irradiance(
@@ -53,7 +78,6 @@ def _poa_irradiance(
     tilt: float,
     azimuth: float,
 ) -> pd.Series:
-    """Compute plane-of-array (POA) irradiance for a tilted surface."""
     poa = pvlib.irradiance.get_total_irradiance(
         surface_tilt=tilt,
         surface_azimuth=azimuth,
@@ -63,7 +87,7 @@ def _poa_irradiance(
         ghi=ghi,
         dhi=dhi,
     )
-    return poa["poa_global"].clip(lower=0)
+    return poa["poa_global"].replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 
 
 def _dc_power(
@@ -72,31 +96,32 @@ def _dc_power(
     wind_speed: pd.Series,
     kwp: float,
 ) -> pd.Series:
-    """Compute DC power using PVWatts with a temperature model."""
-    # Estimate cell temperature using the PVsyst model.
     temp_cell = pvlib.temperature.pvsyst_cell(
         poa_global, temp_air=temp_air, wind_speed=wind_speed
     )
-    # Compute DC power from irradiance and cell temperature.
-    return pvlib.pvsystem.pvwatts_dc(
-        poa_global, temp_cell, pdc0=kwp * 1000, gamma_pdc=-0.004
-    ).clip(lower=0)
+    dc = pvlib.pvsystem.pvwatts_dc(
+        poa_global,
+        temp_cell,
+        pdc0=kwp * 1000,
+        gamma_pdc=-0.004,
+    )
+    return dc.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 
 
 def _ac_power(
     dc_power: pd.Series,
-    kwp: float,
+    kwp_total: float,
     dc_ac_ratio: float,
     eta_inv_nom: float = 0.96,
 ) -> pd.Series:
-    """Compute AC power with inverter efficiency and clipping."""
-    # Nominal AC power derived from the DC/AC ratio.
-    pac0 = kwp * 1000 / dc_ac_ratio
-    # PVWatts inverter model expects a DC reference power.
+    pac0 = kwp_total * 1000 / dc_ac_ratio
     pdc0 = pac0 / eta_inv_nom
-    return pvlib.inverter.pvwatts(
-        dc_power, pdc0=pdc0, eta_inv_nom=eta_inv_nom
-    ).clip(lower=0)
+    ac = pvlib.inverter.pvwatts(
+        dc_power,
+        pdc0=pdc0,
+        eta_inv_nom=eta_inv_nom,
+    )
+    return ac.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 
 
 def simulate_system(
@@ -104,58 +129,43 @@ def simulate_system(
     meta: dict,
     config: SystemConfig,
 ) -> pd.DataFrame:
-    """Simulate DC/AC power for a system.
-
-    For east-west systems we model two sub-arrays and aggregate their DC power
-    before applying inverter clipping.
-    """
     solar_position = _solar_position(weather.index, meta)
-    # Estimate DNI so we can compute POA irradiance.
-    dni = _dni_from_ghi_dhi(weather["ghi"], weather["dhi"], solar_position["zenith"])
-
-    shading = None
-    shading_east = None
-    shading_west = None
+    dni = _dni_from_ghi_dhi(
+        weather["ghi"],
+        weather["dhi"],
+        solar_position["zenith"],
+        solar_position["apparent_zenith"],
+        meta,
+    )
 
     if config.system_type == "east-west":
-        # East-facing sub-array.
+        if config.azimuth_east is None or config.azimuth_west is None:
+            raise ValueError("East-west systems require azimuth_east and azimuth_west.")
+
+        kwp_east = config.kwp_east if config.kwp_east is not None else config.kwp_total / 2
+        kwp_west = config.kwp_west if config.kwp_west is not None else config.kwp_total / 2
+
         poa_east = _poa_irradiance(
             solar_position,
             weather["ghi"],
             weather["dhi"],
             dni,
             tilt=config.tilt,
-            azimuth=90.0,
+            azimuth=config.azimuth_east,
         )
-        # West-facing sub-array.
         poa_west = _poa_irradiance(
             solar_position,
             weather["ghi"],
             weather["dhi"],
             dni,
             tilt=config.tilt,
-            azimuth=270.0,
+            azimuth=config.azimuth_west,
         )
-        # Apply shading profiles to both sub-arrays.
-        shading_east = compute_shading_factor(
-            solar_position, config.shading_model, config.shading_profiles.get("east", {})
-        )
-        shading_west = compute_shading_factor(
-            solar_position, config.shading_model, config.shading_profiles.get("west", {})
-        )
-        poa_east = poa_east * shading_east
-        poa_west = poa_west * shading_west
-        # Split DC capacity evenly across east and west.
-        dc_east = _dc_power(
-            poa_east, weather["t_luft"], weather["v_wind"], config.kwp / 2
-        )
-        dc_west = _dc_power(
-            poa_west, weather["t_luft"], weather["v_wind"], config.kwp / 2
-        )
-        # Aggregate DC power and apply system losses.
+
+        dc_east = _dc_power(poa_east, weather["t_luft"], weather["v_wind"], kwp_east)
+        dc_west = _dc_power(poa_west, weather["t_luft"], weather["v_wind"], kwp_west)
         dc_power = (dc_east + dc_west) * (1 - config.losses)
     else:
-        # Single-orientation system (south/east/west).
         poa = _poa_irradiance(
             solar_position,
             weather["ghi"],
@@ -164,26 +174,22 @@ def simulate_system(
             tilt=config.tilt,
             azimuth=config.azimuth or 180.0,
         )
-        shading = compute_shading_factor(
-            solar_position, config.shading_model, config.shading_profiles.get("single", {})
-        )
-        poa = poa * shading
-        # Apply system losses after DC generation.
         dc_power = _dc_power(
-            poa, weather["t_luft"], weather["v_wind"], config.kwp
+            poa,
+            weather["t_luft"],
+            weather["v_wind"],
+            config.kwp_total,
         ) * (1 - config.losses)
 
-    # Convert DC to AC, including inverter clipping via DC/AC ratio.
-    ac_power = _ac_power(dc_power, config.kwp, config.dc_ac_ratio)
+    ac_power = _ac_power(dc_power, config.kwp_total, config.dc_ac_ratio)
 
-    # Return a tidy dataframe for CSV output.
+    dc_power = dc_power.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
+    ac_power = ac_power.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
+
     return pd.DataFrame(
         {
             "time": weather.index,
             "dc_power_w": dc_power.values,
             "ac_power_w": ac_power.values,
-            "shading_factor": (
-                (shading_east + shading_west) / 2 if config.system_type == "east-west" else shading
-            ).values,
         }
     )
