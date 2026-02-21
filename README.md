@@ -195,7 +195,8 @@ python scripts/generate_synthetic_pv.py   --weather data/wetter-htw-2025-utc.csv
 Noise is applied to AC only (DC remains unchanged), seeded deterministically from `--seed`.
 
 \[
-P_{ac,noisy}(t)=\max\left(0, P_{ac}(t)\cdot (1+\epsilon_t)ight),\quad \epsilon_t \sim \mathcal{N}(0,\sigma_{rel})
+P_{ac,noisy}(t)=\max\left(0, P_{ac}(t)\cdot (1+\epsilon_t)
+ight),\quad \epsilon_t \sim \mathcal{N}(0,\sigma_{rel})
 \]
 
 ## Time mode
