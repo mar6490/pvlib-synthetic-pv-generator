@@ -210,6 +210,7 @@ The generator supports two weather-time interpretation modes:
 Related flags:
 - `--fixed-offset-minutes` (default `60`)
 - `--weather-timestamp` (`with_offset` or `naive`)
+- `--output-timestamp` (`with_offset` default, or `naive` to write logger-style timestamps without offset)
 
 For naive 5-minute logger timestamps with fixed UTC+1 year-round:
 
@@ -225,7 +226,7 @@ python scripts/generate_synthetic_pv.py \
   --seed 42
 ```
 
-In fixed-offset mode, output timestamps are written with a constant offset (e.g. `+01:00`) and do not switch to summer time.
+In fixed-offset mode, output timestamps are based on a constant fixed offset (e.g. UTC+01:00) and do not switch to summer time. Use `--output-timestamp with_offset` (default) to keep `+01:00` in CSV, or `--output-timestamp naive` to drop timezone info on write while keeping the same logger clock time.
 
 ## Input weather format
 
@@ -250,7 +251,7 @@ Metadata file: `systems_metadata.csv`
 - `roof_type` (for east-west)
 - `ew_azimuth_mode` (for east-west)
 - `time_mode`, `fixed_offset_minutes`, `tz_name`
-- `seed`, `generation_mode`, `noise_model`, `noise_sigma_rel`
+- `seed`, `generation_mode`, `noise_model`, `noise_sigma_rel`, `output_timestamp`
 - `lat`, `lon` (included for every system)
 - `kwp_total`
 - `kwp` (alias to `kwp_total`)

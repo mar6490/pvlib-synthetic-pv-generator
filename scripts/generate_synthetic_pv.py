@@ -94,6 +94,12 @@ def parse_args() -> argparse.Namespace:
         default="naive",
         help="Timestamp format in weather CSV",
     )
+    parser.add_argument(
+        "--output-timestamp",
+        choices=["with_offset", "naive"],
+        default="with_offset",
+        help="Output CSV timestamp format: with_offset keeps timezone offset, naive drops tz info after fixed-offset conversion",
+    )
 
     parser.add_argument(
         "--noise-model",
@@ -162,6 +168,7 @@ def main() -> None:
         weather_timestamp=args.weather_timestamp,
         noise_model=args.noise_model,
         noise_sigma_rel=args.noise_sigma_rel,
+        output_timestamp=args.output_timestamp,
     )
 
     if args.quicklook:

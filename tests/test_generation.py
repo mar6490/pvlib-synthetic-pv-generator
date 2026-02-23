@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from pv_synth.generate import generate_systems
 from pv_synth.io import load_weather
@@ -459,3 +460,57 @@ def test_default_cli_time_policy_is_fixed_plus_0100(tmp_path: Path) -> None:
     ts = system_df["time"].astype(str)
     assert ts.str.endswith("+01:00").all()
     assert (~ts.str.endswith("+02:00")).all()
+
+
+def test_output_timestamp_naive_and_with_offset_modes(tmp_path: Path) -> None:
+    weather_path = tmp_path / "wetter-naive-output-ts.csv"
+    meta_path = tmp_path / "meta.json"
+    _write_weather_csv_naive(weather_path)
+    _write_meta(meta_path)
+
+    run_with_offset = generate_systems(
+        weather_path,
+        meta_path,
+        tmp_path / "out_with_offset",
+        n_systems=1,
+        seed=101,
+        output_timestamp="with_offset",
+    )
+    df_with_offset = pd.read_csv(run_with_offset / "system_001.csv")
+    ts_with_offset = pd.to_datetime(df_with_offset["time"], errors="raise")
+    assert ts_with_offset.dt.tz is not None
+    assert ts_with_offset.iloc[0].utcoffset().total_seconds() == 3600
+
+    run_naive = generate_systems(
+        weather_path,
+        meta_path,
+        tmp_path / "out_naive",
+        n_systems=1,
+        seed=101,
+        output_timestamp="naive",
+    )
+    df_naive = pd.read_csv(run_naive / "system_001.csv")
+    ts_naive = pd.to_datetime(df_naive["time"], errors="raise")
+    assert ts_naive.dt.tz is None
+
+    metadata_with_offset = pd.read_csv(run_with_offset / "systems_metadata.csv")
+    metadata_naive = pd.read_csv(run_naive / "systems_metadata.csv")
+    assert (metadata_with_offset["output_timestamp"] == "with_offset").all()
+    assert (metadata_naive["output_timestamp"] == "naive").all()
+
+
+def test_output_timestamp_invalid_value_raises(tmp_path: Path) -> None:
+    weather_path = tmp_path / "wetter-invalid-output-ts.csv"
+    meta_path = tmp_path / "meta.json"
+    _write_weather_csv_naive(weather_path)
+    _write_meta(meta_path)
+
+    with pytest.raises(ValueError, match="output_timestamp"):
+        generate_systems(
+            weather_path,
+            meta_path,
+            tmp_path / "out_invalid",
+            n_systems=1,
+            seed=1,
+            output_timestamp="broken",  # type: ignore[arg-type]
+        )

@@ -14,6 +14,9 @@ from pv_synth.noise import apply_ac_noise
 from pv_synth.pv_models import SystemConfig, simulate_system
 from pv_synth.scenarios import generate_scenarios
 
+
+OUTPUT_TIMESTAMP_CHOICES = {"with_offset", "naive"}
+
 TIMESTAMP_DIR_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 
 
@@ -66,6 +69,21 @@ def _build_scenarios(
     )
 
 
+
+
+def _format_output_time(
+    times: pd.Series | pd.DatetimeIndex,
+    site_tz: timezone,
+    output_timestamp: str,
+) -> pd.DatetimeIndex:
+    if output_timestamp not in OUTPUT_TIMESTAMP_CHOICES:
+        raise ValueError("output_timestamp must be 'with_offset' or 'naive'.")
+
+    localized = pd.DatetimeIndex(times).tz_convert(site_tz)
+    if output_timestamp == "naive":
+        return localized.tz_localize(None)
+    return localized
+
 def generate_systems(
     weather_path: str | Path,
     meta_path: str | Path,
@@ -86,6 +104,7 @@ def generate_systems(
     scenario_file: str | Path | None = None,
     noise_model: str = "none",
     noise_sigma_rel: float = 0.02,
+    output_timestamp: str = "with_offset",
 ) -> Path:
     """Generate synthetic PV systems and write outputs to disk."""
     meta = load_site_meta(meta_path)
@@ -129,7 +148,7 @@ def generate_systems(
             noise_sigma_rel=noise_sigma_rel,
             seed=(seed or 0) + config.system_id,
         )
-        system_df["time"] = pd.DatetimeIndex(system_df["time"]).tz_convert(site_tz)
+        system_df["time"] = _format_output_time(system_df["time"], site_tz, output_timestamp)
 
         system_id = f"{config.system_id:03d}"
         system_df.to_csv(output_path / f"system_{system_id}.csv", index=False)
@@ -149,6 +168,7 @@ def generate_systems(
                 "generation_mode": generation_mode,
                 "noise_model": noise_model,
                 "noise_sigma_rel": noise_sigma_rel,
+                "output_timestamp": output_timestamp,
                 "lat": meta["lat"],
                 "lon": meta["lon"],
                 "kwp_total": config.kwp_total,
