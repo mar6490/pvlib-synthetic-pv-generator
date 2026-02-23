@@ -68,6 +68,26 @@ def _write_weather_csv_with_offset(path: Path) -> None:
     weather.to_csv(path, index=False, sep=";")
 
 
+
+
+def _write_weather_csv_naive(path: Path) -> None:
+    weather = pd.DataFrame(
+        {
+            "time": [
+                "2025-01-01 10:00:00",
+                "2025-01-01 10:05:00",
+                "2025-01-01 10:10:00",
+                "2025-01-01 10:15:00",
+            ],
+            "ghi": [500, 510, 520, 530],
+            "dhi": [100, 105, 110, 115],
+            "t_luft": [20, 20, 21, 21],
+            "v_wind": [2, 2, 3, 3],
+        }
+    )
+    weather.to_csv(path, index=False, sep=";")
+
+
 def _write_meta(path: Path) -> None:
     meta = {"lat": 52.5, "lon": 13.4, "tz": "Europe/Berlin"}
     path.write_text(json.dumps(meta), encoding="utf-8")
