@@ -66,8 +66,9 @@ def _dni_from_ghi_dhi(
         clearsky_tolerance=1.1,
     )
     dni = dni.replace([np.inf, -np.inf], np.nan)
-    dni = dni.where(apparent_zenith < 90, 0.0)
-    return dni.fillna(0.0).clip(lower=0)
+    dni = dni.where(apparent_zenith < 88.0, 0.0)
+    dni_upper = (dni_clear * 1.1).clip(lower=0.0)
+    return dni.fillna(0.0).clip(lower=0.0, upper=dni_upper)
 
 
 def _poa_irradiance(
@@ -78,7 +79,7 @@ def _poa_irradiance(
     tilt: float,
     azimuth: float,
 ) -> pd.Series:
-    dni_extra = pvlib.irradiance.get_extra_radiation(pd.DatetimeIndex(solar_position.index))
+    dni_extra = pvlib.irradiance.get_extra_radiation(solar_position.index)
     poa = pvlib.irradiance.get_total_irradiance(
         surface_tilt=tilt,
         surface_azimuth=azimuth,

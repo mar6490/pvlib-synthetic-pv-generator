@@ -2,7 +2,7 @@ from datetime import timezone, timedelta
 
 import pandas as pd
 
-from pv_synth.pv_models import SystemConfig, _poa_irradiance, simulate_system
+from pv_synth.pv_models import SystemConfig, _dni_from_ghi_dhi, _poa_irradiance, simulate_system
 
 
 def _mini_weather() -> pd.DataFrame:
@@ -24,7 +24,7 @@ def _mini_weather() -> pd.DataFrame:
 
 
 def _meta() -> dict:
-    return {"lat": 52.5, "lon": 13.4, "tz": "Europe/Berlin"}
+    return {"lat": 52.5, "lon": 13.4, "tz": "UTC"}
 
 
 def test_poa_irradiance_uses_perez_model(monkeypatch) -> None:
@@ -52,7 +52,32 @@ def test_poa_irradiance_uses_perez_model(monkeypatch) -> None:
     out = _poa_irradiance(solar_position, ghi, dhi, dni, tilt=30.0, azimuth=180.0)
 
     assert captured["model"] == "perez"
+    assert "dni_extra" in captured
+    assert len(captured["dni_extra"]) == len(solar_position)
     assert (out >= 0).all()
+
+
+def test_dni_is_zeroed_for_high_apparent_zenith(monkeypatch) -> None:
+    def fake_dni(**kwargs):
+        return pd.Series([500.0, 500.0], index=kwargs["ghi"].index)
+
+    monkeypatch.setattr("pv_synth.pv_models.pvlib.irradiance.dni", fake_dni)
+
+    idx = pd.date_range(
+        "2025-06-01 11:00:00",
+        periods=2,
+        freq="15min",
+        tz=timezone(timedelta(hours=1)),
+    )
+    ghi = pd.Series([400.0, 400.0], index=idx)
+    dhi = pd.Series([100.0, 100.0], index=idx)
+    zenith = pd.Series([70.0, 89.0], index=idx)
+    apparent_zenith = pd.Series([70.0, 89.0], index=idx)
+
+    dni = _dni_from_ghi_dhi(ghi, dhi, zenith, apparent_zenith, _meta())
+
+    assert dni.iloc[0] >= 0.0
+    assert dni.iloc[1] == 0.0
 
 
 def test_simulate_system_outputs_are_non_negative_with_fixed_offset_index() -> None:
