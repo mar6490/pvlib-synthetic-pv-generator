@@ -78,6 +78,7 @@ def _poa_irradiance(
     tilt: float,
     azimuth: float,
 ) -> pd.Series:
+    dni_extra = pvlib.irradiance.get_extra_radiation(pd.DatetimeIndex(solar_position.index))
     poa = pvlib.irradiance.get_total_irradiance(
         surface_tilt=tilt,
         surface_azimuth=azimuth,
@@ -86,6 +87,8 @@ def _poa_irradiance(
         dni=dni,
         ghi=ghi,
         dhi=dhi,
+        dni_extra=dni_extra,
+        model="perez",
     )
     return poa["poa_global"].replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
 

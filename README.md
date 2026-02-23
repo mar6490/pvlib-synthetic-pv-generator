@@ -4,6 +4,7 @@ This project creates synthetic PV power profiles from measured weather data.
 
 ## Key point
 Synthetic shading is removed. The generator produces unshaded systems only.
+For POA transposition, the simulation uses pvlib with the Perez model explicitly (`model="perez"`).
 
 ## Usage
 
