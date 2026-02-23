@@ -1,0 +1,12 @@
+# Deterministisches Scenario-Grid für --generation-mode grid
+# Nutzung:
+#   --scenario-file data/scenarios.yml
+
+single:
+  tilt_deg: [10, 25, 40]
+  azimuth_deg: [90, 135, 180, 225, 270]
+
+east-west:
+  center_deg: [0, 45, 90, 135, 180, 225, 270, 315]
+  half_delta_deg: [90]
+  weight: [0.2, 0.5, 0.8]
