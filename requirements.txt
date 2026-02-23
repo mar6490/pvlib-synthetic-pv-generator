@@ -4,3 +4,4 @@ pvlib
 pandas
 numpy
 pytest
+matplotlib
