@@ -110,11 +110,12 @@ def load_scenario_grid(path: str | Path) -> list[SystemConfig]:
     if east_west is not None:
         if not isinstance(east_west, dict):
             raise ValueError("Grid section 'east-west' must be a mapping.")
+        tilts = _validate_list(east_west, "tilt_deg", "east-west")
         centers = _validate_list(east_west, "center_deg", "east-west")
         half_deltas = _validate_list(east_west, "half_delta_deg", "east-west")
         weights = _validate_list(east_west, "weight", "east-west")
 
-        for center_deg, half_delta_deg, weight in product(centers, half_deltas, weights):
+        for tilt_deg, center_deg, half_delta_deg, weight in product(tilts, centers, half_deltas, weights):
             azimuth_east = (center_deg - half_delta_deg) % 360.0
             azimuth_west = (center_deg + half_delta_deg) % 360.0
             kwp_total = 10.0
@@ -130,7 +131,7 @@ def load_scenario_grid(path: str | Path) -> list[SystemConfig]:
                     kwp_total=kwp_total,
                     kwp_east=kwp_east,
                     kwp_west=kwp_west,
-                    tilt=25.0,
+                    tilt=float(tilt_deg),
                     azimuth=None,
                     azimuth_east=float(azimuth_east),
                     azimuth_west=float(azimuth_west),

@@ -37,6 +37,7 @@ single:
   azimuth_deg: [90, 180]
 
 east-west:
+  tilt_deg: [20]
   center_deg: [0, 180]
   half_delta_deg: [90]
   weight: [0.2, 0.8]
