@@ -1,0 +1,130 @@
+explicit:
+  # Single-Plane systems S01–S22
+  - system_type: single
+    tilt_deg: 10
+    azimuth_deg: 90
+  - system_type: single
+    tilt_deg: 10
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 10
+    azimuth_deg: 270
+  - system_type: single
+    tilt_deg: 20
+    azimuth_deg: 90
+  - system_type: single
+    tilt_deg: 20
+    azimuth_deg: 135
+  - system_type: single
+    tilt_deg: 20
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 20
+    azimuth_deg: 225
+  - system_type: single
+    tilt_deg: 20
+    azimuth_deg: 270
+  - system_type: single
+    tilt_deg: 30
+    azimuth_deg: 90
+  - system_type: single
+    tilt_deg: 30
+    azimuth_deg: 135
+  - system_type: single
+    tilt_deg: 30
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 30
+    azimuth_deg: 225
+  - system_type: single
+    tilt_deg: 30
+    azimuth_deg: 270
+  - system_type: single
+    tilt_deg: 40
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 45
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 35
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 23
+    azimuth_deg: 173
+  - system_type: single
+    tilt_deg: 35
+    azimuth_deg: 197
+  - system_type: single
+    tilt_deg: 15
+    azimuth_deg: 143
+  - system_type: single
+    tilt_deg: 0
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 5
+    azimuth_deg: 180
+  - system_type: single
+    tilt_deg: 55
+    azimuth_deg: 180
+
+  # Two-Plane systems T01–T12
+  - system_type: east-west
+    tilt_deg: 10
+    center_deg: 0
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 15
+    center_deg: 0
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 25
+    center_deg: 0
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 30
+    center_deg: 0
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 40
+    center_deg: 0
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 25
+    center_deg: 45
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 30
+    center_deg: 45
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 25
+    center_deg: 135
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 30
+    center_deg: 135
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 5
+    center_deg: 0
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 30
+    center_deg: 90
+    half_delta_deg: 90
+    weight: 0.5
+  - system_type: east-west
+    tilt_deg: 10
+    center_deg: 45
+    half_delta_deg: 90
+    weight: 0.5
