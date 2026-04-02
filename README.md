@@ -188,6 +188,26 @@ Grid mode example:
 python scripts/generate_synthetic_pv.py   --weather data/wetter-htw-2025-utc.csv   --meta data/site_meta.json   --out-dir outputs_grid   --generation-mode grid   --scenario-file data/scenarios.yml   --seed 42
 ```
 
+
+## Explicit mode
+
+In addition to cartesian grid axes (`single`, `east-west`), scenario files can define an `explicit` section.
+Each `explicit` row creates exactly one system in file order (no cartesian expansion).
+
+See `data/scenarios_validation.yml` for a complete validation-ready explicit scenario set.
+
+Example run:
+
+```bash
+python scripts/generate_synthetic_pv.py \
+  --weather data/wetter-htw-2025-utc.csv \
+  --meta data/site_meta.json \
+  --out-dir outputs_explicit \
+  --generation-mode grid \
+  --scenario-file data/scenarios_validation.yml \
+  --seed 42
+```
+
 ## Optional AC noise
 
 - `--noise-model none|gaussian` (default: `none`)

@@ -5,3 +5,4 @@ pandas
 numpy
 pytest
 matplotlib
+pyyaml>=6.0
